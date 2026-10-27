@@ -39,7 +39,33 @@ starlette 1.10.0, SQLAlchemy 2.1.6, pydantic 2.14.1, uvicorn 0.54.0, httpx 0.28.
   Reset sit below the fold.
 - Test video is synthetic (`testsrc2`). Real Veo files have not been tried (see Phase C).
 
-## Phase B: harden the product — not started
+## Phase B: harden the product — DONE
+
+Exit check: `pytest` 64/64 pass; `e2e/ui_smoke.js` 48/48 browser checks pass (run with both a
+browser-friendly mp4 and an mpeg4 .mkv to exercise the proxy).
+
+| Feature | What was built | Verified by |
+|---|---|---|
+| Alembic | `backend/migrations/`, run on startup by `app/migrate.py`; pre-Alembic databases are stamped at `0001` and kept | `test_migrations.py` (models == migrations, down/up round-trip, legacy adoption); the Phase A dev DB was adopted with its 4 matches |
+| Auth + isolation | `Club`, `User` (admin/member), `AuthSession` (hashed token, cookie or bearer), scrypt passwords, `python -m app.cli create-user`. All match/event/reel routes scoped; other clubs get 404 | `test_auth.py`: 15 routes need login; every per-match/event route is 404 cross-club and changes nothing; mutation test (drop the club check) fails the suite. Browser: register, sign out (API 401), sign in, add coach |
+| Review queue | `?reviewed=false&order=confidence` on the normal events query (so filters apply); review card plays each event; Enter / E / D twice / arrows / Esc | API tests for ordering and filter combination; browser walks every key incl. "keys ignored while the editor is open" |
+| Reel export | `POST /matches/{id}/reels?<filters>` -> job: merge overlapping windows, cut via clip cache, concat demuxer `-c copy`; status, download, delete | Real-ffmpeg test checks segment count and duration vs. expected; live 30-event reel decodes with no errors and A/V durations match (154.52 s); browser exports and downloads |
+| Playback proxy | `needs_proxy()` rules (container, codec, pix_fmt, audio, >1080p, >20 Mbit/s, keyframe gap >10 s), built after detection with progress, served by `/video` once ready | Unit tests for each rule; real-ffmpeg mkv/mpeg4 upload gets an h264 proxy, friendly mp4 served byte-identical, failure falls back. Browser: banner, then 1280px playback; before the proxy Chromium shows a black audio-only player for the mkv |
+
+**Also fixed in Phase B**
+
+- Matches stuck in `uploaded` (queued job lost on restart) were never failed; only `processing` was.
+- Proxy races: reprocess while the proxy builds is refused; re-uploading drops a stale proxy.
+- Downloaded clips/reels of stub events carry `DEMO-simulated-event(s)` in the filename: the demo
+  banner doesn't travel with a file.
+
+**Known gaps (not blocking)**
+
+- No login rate limiting / lockout, no password reset, no email verification. Signup is open by
+  default (`PITCHSIGHT_ALLOW_SIGNUP=false` to close). CSRF relies on `SameSite=Lax` cookies.
+- Jobs (detection, proxy, reels) still run in-process; a restart fails them (marked so in the UI).
+  The queue/worker is Phase D.
+- SQLite foreign keys aren't enforced; deletes cascade through the ORM instead.
 
 ## Phase C: real detection — not started
 
