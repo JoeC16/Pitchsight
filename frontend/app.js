@@ -56,7 +56,7 @@ const freshFilters = () => ({ types: new Set(), team: '', period: '', minConf: 0
 const S = {
   me: null, packs: {}, matches: [], match: null, pack: null,
   events: [], shown: [], shownIds: new Set(), summary: null,
-  filters: freshFilters(), reel: null, review: null, poll: null,
+  filters: freshFilters(), reel: null, review: null, poll: null, exp: null,
 };
 const video = () => $('#video');
 const teamName = (team) => (team === 'home' ? S.match.home_team : team === 'away' ? S.match.away_team : 'Unassigned');
@@ -99,6 +99,8 @@ function renderEmpty() {
 
 async function openMatch(id) {
   clearInterval(S.poll);
+  if (S.exp) clearInterval(S.exp.poll);
+  S.exp = null;
   stopReel();
   S.review = null;
   try {
@@ -153,6 +155,7 @@ function renderShell() {
     h('aside', { class: 'right' },
       h('div', { class: 'filters', id: 'filters' }),
       h('div', { class: 'listbar', id: 'listbar' }),
+      h('div', { id: 'exportbox' }),
       h('div', { class: 'events', id: 'events' })),
   );
   const v = video();
@@ -311,6 +314,7 @@ function renderList() {
         `Review (${S.shown.filter((e) => !e.reviewed).length})`),
       h('button', { class: 'btn small', disabled: !S.shown.length || !S.match.has_video, onclick: () => (S.reel ? stopReel() : startReel()) },
         S.reel ? '■ Stop reel' : `▶ Play reel (${S.shown.length})`),
+      h('button', { class: 'btn small', title: 'Download the filtered events as one mp4', disabled: !S.shown.length || !S.match.has_video || (S.exp && !S.exp.done), onclick: exportReel }, '⬇ Export'),
       h('button', { class: 'btn small', disabled: !S.match.has_video, onclick: () => openEditor(null) }, '+ Tag')),
   );
   if (!S.shown.length) {
@@ -382,6 +386,44 @@ function onTimeUpdate() {
     r.i += 1;
     playReelItem();
   }
+}
+
+// ---------- reel export (server joins the filtered clips into one mp4) ----------
+async function exportReel() {
+  const q = filterQuery();
+  let reel;
+  try {
+    reel = await api(`/matches/${S.match.id}/reels${q ? '?' + q : ''}`, { method: 'POST' });
+  } catch (e) { return alert(e.message); }
+  if (S.exp) clearInterval(S.exp.poll);
+  S.exp = { reel, done: false, poll: null };
+  renderExport(); renderList();
+  const exp = S.exp;
+  exp.poll = setInterval(async () => {
+    try { exp.reel = await api('/reels/' + reel.id); } catch (_) { return; }
+    if (['ready', 'failed'].includes(exp.reel.status)) { exp.done = true; clearInterval(exp.poll); }
+    if (S.exp === exp) { renderExport(); if (exp.done) renderList(); }
+  }, 1500);
+}
+
+function renderExport() {
+  const box = $('#exportbox');
+  if (!box) return;
+  if (!S.exp) return box.replaceChildren();
+  const r = S.exp.reel, pct = Math.round(r.progress * 100);
+  const close = h('button', { class: 'btn small', title: 'Dismiss', onclick: () => { clearInterval(S.exp.poll); S.exp = null; renderExport(); renderList(); } }, '×');
+  let body;
+  if (r.status === 'ready') {
+    body = [h('span', null, `Reel ready: ${r.event_count} events, ${fmtTime(r.duration_s)}`),
+      h('a', { class: 'btn small primary', href: `/api/reels/${r.id}/download`, download: '' }, '⬇ Download')];
+  } else if (r.status === 'failed') {
+    body = [h('span', { class: 'bad' }, `Export failed: ${r.error || 'unknown error'}`)];
+  } else {
+    body = [h('span', null, `Building reel of ${r.event_count} events… ${pct}%`)];
+  }
+  box.replaceChildren(h('div', { class: 'exportbox ' + r.status },
+    h('div', { class: 'exportrow' }, ...body, close),
+    r.status === 'ready' || r.status === 'failed' ? '' : h('div', { class: 'bar' }, h('div', { style: { width: `${pct}%` } }))));
 }
 
 // ---------- review queue ----------

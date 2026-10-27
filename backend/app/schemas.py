@@ -115,3 +115,18 @@ class ClubOut(BaseModel):
 
 class Me(UserOut):
     club: ClubOut
+
+
+class ReelOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    match_id: int
+    filters: str
+    event_count: int
+    status: str
+    progress: float
+    error: str | None
+    segment_count: int | None
+    duration_s: float | None
+    created_at: datetime

@@ -162,6 +162,7 @@ def test_end_to_end_with_real_video_and_clip(client, match, tmp_path):
     event = client.get(f"/api/matches/{match['id']}/events").json()[5]
     clip = client.get(f"/api/events/{event['id']}/clip")
     assert clip.status_code == 200 and clip.headers["content-type"] == "video/mp4" and len(clip.content) > 1000
+    assert "DEMO-simulated-event" in clip.headers["content-disposition"]
 
 
 def test_review_queue_query(client, match, fake_probe):

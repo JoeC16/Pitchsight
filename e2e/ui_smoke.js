@@ -153,6 +153,24 @@ function check(cond, msg) {
     check(freeRows.some((r) => r.startsWith('0:42') && /reviewed/.test(r)), 'manual tag at 0:42, reviewed');
     await snap('tagged');
 
+    // --- reel export: filter to home kickouts, export, wait, download
+    await page.locator('#filters .chip', { hasText: 'Kickout' }).click();
+    await page.locator('#filters .chip', { hasText: 'St Mary GAC' }).click();
+    await page.waitForTimeout(300);
+    const nKick = await page.locator('.ev').count();
+    await page.locator('#listbar button', { hasText: 'Export' }).click();
+    await page.waitForSelector('.exportbox');
+    check(new RegExp(`(Building reel of |Reel ready: )${nKick} events`).test(await page.locator('.exportbox').innerText()), `export started for the ${nKick} filtered events`);
+    await page.waitForSelector('.exportbox.ready', { timeout: 120000 });
+    await snap('export-ready');
+    const [reelDl] = await Promise.all([page.waitForEvent('download'), page.locator('.exportbox a', { hasText: 'Download' }).click()]);
+    const reelOut = path.join(shots, 'reel.mp4');
+    await reelDl.saveAs(reelOut);
+    check(fs.statSync(reelOut).size > 100000, `reel downloaded: ${reelDl.suggestedFilename()} (${fs.statSync(reelOut).size} bytes)`);
+    await page.locator('.exportbox button[title=Dismiss]').click();
+    await page.locator('#filters button', { hasText: 'Reset filters' }).click();
+    await page.waitForFunction((n) => document.querySelectorAll('.ev').length === n, total + 1);
+
     // --- review queue, keyboard only
     const reviewedCount = async () => Number((await page.locator('#mhead .sub').innerText()).match(/(\d+) reviewed/)[1]);
     const r0 = await reviewedCount();
@@ -226,7 +244,7 @@ function check(cond, msg) {
     const out = path.join(shots, 'clip.mp4');
     await dl.saveAs(out);
     const size = fs.statSync(out).size;
-    check(size > 10000 && dl.suggestedFilename().endsWith('.mp4'), `clip downloaded: ${dl.suggestedFilename()} (${size} bytes)`);
+    check(size > 10000 && dl.suggestedFilename().endsWith('_DEMO-simulated-event.mp4'), `clip downloaded: ${dl.suggestedFilename()} (${size} bytes)`);
 
     // --- club dialog: admin adds a coach
     await page.locator('#user-box button', { hasText: 'St Mary GAC' }).click();

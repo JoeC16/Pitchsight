@@ -24,9 +24,14 @@ def clip_path(match: Match, start: float, end: float) -> Path:
 
 
 def get_or_cut_clip(match: Match, event: Event) -> Path:
+    start, end = clip_window(event, match.duration_s)
+    return get_or_cut_window(match, start, end)
+
+
+def get_or_cut_window(match: Match, start: float, end: float) -> Path:
+    """Cut [start, end] of the match video to an mp4, or return the cached copy."""
     if not match.video_path:
         raise ClipError("Match has no video")
-    start, end = clip_window(event, match.duration_s)
     dest = clip_path(match, start, end)
     if dest.exists():
         return dest
@@ -35,6 +40,7 @@ def get_or_cut_clip(match: Match, event: Event) -> Path:
 
     config.CLIP_DIR.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(".part.mp4")
+    # Every clip is encoded with the same settings, so reels can join them without re-encoding.
     cmd = [
         "ffmpeg", "-y", "-loglevel", "error",
         "-ss", f"{start:.3f}", "-i", match.video_path, "-t", f"{end - start:.3f}",

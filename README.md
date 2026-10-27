@@ -27,7 +27,8 @@ processing finishes (seconds with the stub).
 1. In Veo, download the match recording.
 2. Upload it in PitchSight with the team names and sport.
 3. Filter by event type, team, half, attributes (outcome, zone, source...) and AI confidence.
-4. Play the filtered reel, download single clips, correct wrong events, or tag moments by hand.
+4. Play the filtered reel or export it as one mp4, download single clips, correct wrong events, or tag moments by hand.
+5. Press **Review** to step through unreviewed events, least confident first (Enter / E / D D / arrows / Esc).
 
 ## Adding a classification or a sport
 
@@ -42,6 +43,7 @@ code changes needed. Copy `soccer.yaml` to start a new sport.
 | `PITCHSIGHT_DETECTOR` | `stub` | `stub` or `real` |
 | `PITCHSIGHT_MAX_UPLOAD_GB` | `20` | upload size cap |
 | `PITCHSIGHT_CLIP_PRE_S` / `_POST_S` | `5` / `3` | clip padding in seconds |
+| `PITCHSIGHT_MAX_REEL_EVENTS` | `300` | most events allowed in one exported reel |
 | `PITCHSIGHT_DB_URL` | sqlite in data dir | any SQLAlchemy URL |
 | `PITCHSIGHT_ALLOW_SIGNUP` | `true` | allow `POST /api/auth/register` (creates a new club + admin) |
 | `PITCHSIGHT_SESSION_DAYS` | `30` | login session lifetime |

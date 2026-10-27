@@ -14,7 +14,13 @@ Veo (manual download) -> browser PUT /api/matches/{id}/video (streamed to disk)
         |
         v
   ffmpeg clip cutter (cached) -> per-event mp4 download
+        |
+        v
+  reel export job: merge overlapping windows -> cut each (clip cache) -> concat (-c copy)
 ```
+
+Downloads of simulated (stub) content carry `DEMO-simulated-event(s)` in the filename, because
+the UI's demo banner doesn't travel with the file.
 
 ## Real detection pipeline (target; `pipeline/real.py`)
 
@@ -65,6 +71,10 @@ barely exists publicly, so a labelled dataset is part of the work.
 | GET | `/matches/{id}/summary` | counts, per-attribute breakdowns, score |
 | GET/PATCH/DELETE | `/events/{id}` | read / correct (sets reviewed) / remove |
 | GET | `/events/{id}/clip` | cut and cache an mp4 around the event |
+| POST | `/matches/{id}/reels?<event filters>` | 202; export matching events as one mp4 (background job) |
+| GET | `/matches/{id}/reels` | list a match's exported reels |
+| GET/DELETE | `/reels/{id}` | status + progress / delete |
+| GET | `/reels/{id}/download` | the mp4, once `status` is `ready` |
 
 Event filters: `type=a,b` `team=home|away` `period=1|2` `min_conf=0.6` `attr.<id>=v1,v2`
 `reviewed=true|false` `order=time|confidence`. The review queue is `?reviewed=false&order=confidence`

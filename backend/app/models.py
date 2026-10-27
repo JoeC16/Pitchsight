@@ -72,6 +72,8 @@ class Match(Base):
     events: Mapped[list["Event"]] = relationship(
         back_populates="match", cascade="all, delete-orphan"
     )
+    # ORM-level cascades: sqlite doesn't enforce ON DELETE CASCADE unless foreign keys are enabled.
+    reels: Mapped[list["Reel"]] = relationship(back_populates="match", cascade="all, delete-orphan")
 
     @property
     def has_video(self) -> bool:
@@ -95,3 +97,28 @@ class Event(Base):
     reviewed: Mapped[bool] = mapped_column(Boolean, default=False)
 
     match: Mapped[Match] = relationship(back_populates="events")
+
+
+class Reel(Base):
+    """An exported highlight reel: the events matching a filter, cut and joined into one mp4."""
+
+    __tablename__ = "reels"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    match_id: Mapped[int] = mapped_column(ForeignKey("matches.id", ondelete="CASCADE"), index=True)
+    filters: Mapped[str] = mapped_column(String(2000), default="")  # the query string it was made from
+    event_ids: Mapped[list] = mapped_column(JSON, default=list)  # snapshot taken at request time
+    # queued -> processing -> ready | failed
+    status: Mapped[str] = mapped_column(String(20), default="queued")
+    progress: Mapped[float] = mapped_column(Float, default=0.0)
+    error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    segment_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    duration_s: Mapped[float | None] = mapped_column(Float, nullable=True)
+    path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    match: Mapped[Match] = relationship(back_populates="reels")
+
+    @property
+    def event_count(self) -> int:
+        return len(self.event_ids or [])

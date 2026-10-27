@@ -64,4 +64,6 @@ def event_clip(event_id: int, user: CurrentUser, db: Session = Depends(get_db)):
         path = clips.get_or_cut_clip(event.match, event)
     except clips.ClipError as exc:
         raise HTTPException(500, str(exc)) from None
-    return FileResponse(path, media_type="video/mp4", filename=f"{event.type}_{int(event.t_start)}s.mp4")
+    # The demo banner doesn't travel with a downloaded file, so label simulated events in its name.
+    demo = "_DEMO-simulated-event" if event.origin == "stub" else ""
+    return FileResponse(path, media_type="video/mp4", filename=f"{event.type}_{int(event.t_start)}s{demo}.mp4")
