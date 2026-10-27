@@ -5,7 +5,8 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import update
 
 from . import config, models
-from .db import Base, SessionLocal, engine
+from .db import SessionLocal
+from .migrate import upgrade_db
 from .routers import events, matches, sports
 
 
@@ -13,7 +14,7 @@ from .routers import events, matches, sports
 async def lifespan(app: FastAPI):
     for directory in (config.VIDEO_DIR, config.CLIP_DIR):
         directory.mkdir(parents=True, exist_ok=True)
-    Base.metadata.create_all(engine)  # swap for Alembic migrations before shipping to real users
+    upgrade_db()
 
     # In-process background jobs die with the server; don't leave matches stuck in 'processing'.
     with SessionLocal() as db:
