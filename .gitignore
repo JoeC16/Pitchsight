@@ -7,3 +7,7 @@ data/
 node_modules/
 .DS_Store
 e2e/screenshots/
+# Match footage is large and identifies people: never commit it.
+sample_matches/*
+!sample_matches/README.md
+!sample_matches/ground_truth_template.csv

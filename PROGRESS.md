@@ -67,6 +67,24 @@ browser-friendly mp4 and an mpeg4 .mkv to exercise the proxy).
   The queue/worker is Phase D.
 - SQLite foreign keys aren't enforced; deletes cascade through the ORM instead.
 
-## Phase C: real detection — not started
+## Phase C: real detection — BLOCKED: no footage
 
-## Phase D: production readiness — not started
+`sample_matches/` did not exist (no footage supplied). As instructed, nothing in Phase C has been
+started and no detection results have been produced or simulated. `PITCHSIGHT_DETECTOR=real`
+still raises "not built yet", and stub results still carry the Demo data banner.
+
+**Needed to unblock** (details in `sample_matches/README.md`):
+
+1. 3 full GAA matches as downloaded from Veo, ideally the full panoramic (fixed, whole-pitch)
+   export. The planned single-homography calibration doesn't work on the panning/zooming
+   followed view. Which exports the Veo plan offers is unknown: needs confirming.
+2. Per-match notes: kit and goalkeeper colours, which end each team attacks first, half start times.
+3. Hand-tagged ground truth in `sample_matches/ground_truth_template.csv` format (generated from
+   the sport pack): every shot, kickout and turnover in at least the held-out match.
+4. Download links (files can't go in git; the container is temporary).
+
+**Early licence note for the model choices** (to confirm and record in `docs/LICENCES.md` in
+Phase C): Ultralytics YOLO is AGPL-3.0 (commercial use needs their enterprise licence or opening
+the source); RF-DETR is Apache-2.0; ByteTrack is MIT. SoccerNet data needs an NDA and is research-only.
+
+## Phase D: production readiness — not started (waiting on Phase C, per the phase order)

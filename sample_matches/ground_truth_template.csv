@@ -1,0 +1,4 @@
+video_file,type,team,period,t_start,t_end,outcome,source,method,pressure,side,zone,origin,kind,length,target,reason,notes
+match1.mp4,kickout,home,1,62.0,66.5,retained_clean,,,,,,,,long,left,,
+match1.mp4,turnover,away,1,131.4,133.0,,,,,,middle_third,,tackle,,,,
+match1.mp4,shot,away,1,140.2,143.0,point,from_play,,,,,,,,,,example rows - delete these
