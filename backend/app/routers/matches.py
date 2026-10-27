@@ -97,6 +97,10 @@ async def upload_video(
         raise
 
     match.video_path, match.status, match.error = str(dest), "uploaded", None
+    # A proxy left from an earlier upload belongs to the old file.
+    if match.proxy_path:
+        Path(match.proxy_path).unlink(missing_ok=True)
+    match.proxy_path, match.proxy_status, match.proxy_reason, match.proxy_progress = None, "none", None, 0.0
     db.commit()
     background.add_task(process_match, match.id)
     return match
@@ -120,7 +124,7 @@ def reprocess(match_id: int, background: BackgroundTasks, user: CurrentUser, db:
     match = _get_match(db, match_id, user)
     if not match.video_path:
         raise HTTPException(409, "Upload a video first")
-    if match.status == "processing":
+    if match.status == "processing" or match.proxy_status == "pending":
         raise HTTPException(409, "Already processing")
     db.execute(delete(Event).where(Event.match_id == match.id, Event.origin != "manual", Event.reviewed.is_(False)))
     match.status, match.progress, match.error = "uploaded", 0.0, None

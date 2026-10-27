@@ -100,3 +100,29 @@ def test_failed_proxy_falls_back_to_original(client, match, tmp_path, monkeypatc
     m = client.get(f"/api/matches/{match['id']}").json()
     assert m["status"] == "ready" and m["proxy_status"] == "failed"
     assert client.get(f"/api/matches/{match['id']}/video").content == src.read_bytes()
+
+
+def test_reprocess_refused_while_proxy_builds(client, match):
+    from app.db import SessionLocal
+    from app.models import Match
+    with SessionLocal() as db:
+        m = db.get(Match, match["id"])
+        m.video_path, m.status, m.proxy_status = "/nonexistent.mkv", "ready", "pending"
+        db.commit()
+    assert client.post(f"/api/matches/{match['id']}/reprocess").status_code == 409
+
+
+@needs_ffmpeg
+def test_reupload_after_failure_drops_old_proxy(client, match, tmp_path):
+    from app.db import SessionLocal
+    from app.models import Match
+    src = make_video(tmp_path / "game.mkv", "-c:v", "mpeg4")
+    upload(client, match["id"], data=src.read_bytes(), name="game.mkv")
+    with SessionLocal() as db:  # pretend a later reprocess failed, so a new upload is allowed
+        db.get(Match, match["id"]).status = "failed"
+        db.commit()
+    friendly = make_video(tmp_path / "new.mp4", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-g", "20", "-c:a", "aac")
+    assert upload(client, match["id"], data=friendly.read_bytes()).status_code == 200
+    m = client.get(f"/api/matches/{match['id']}").json()
+    assert m["proxy_status"] == "none"
+    assert client.get(f"/api/matches/{match['id']}/video").content == friendly.read_bytes()
