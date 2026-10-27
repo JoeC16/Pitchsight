@@ -66,7 +66,11 @@ barely exists publicly, so a labelled dataset is part of the work.
 | GET/PATCH/DELETE | `/events/{id}` | read / correct (sets reviewed) / remove |
 | GET | `/events/{id}/clip` | cut and cache an mp4 around the event |
 
-Event filters: `type=a,b` `team=home|away` `period=1|2` `min_conf=0.6` `attr.<id>=v1,v2`.
+Event filters: `type=a,b` `team=home|away` `period=1|2` `min_conf=0.6` `attr.<id>=v1,v2`
+`reviewed=true|false` `order=time|confidence`. The review queue is `?reviewed=false&order=confidence`
+(least confident first, unknown confidence first) combined with whatever filters are active.
+
+Review UI keys: Enter confirm, E edit, D twice delete, ←/→ prev/next, Esc exit.
 
 ## Scaling notes
 

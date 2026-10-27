@@ -153,6 +153,61 @@ function check(cond, msg) {
     check(freeRows.some((r) => r.startsWith('0:42') && /reviewed/.test(r)), 'manual tag at 0:42, reviewed');
     await snap('tagged');
 
+    // --- review queue, keyboard only
+    const reviewedCount = async () => Number((await page.locator('#mhead .sub').innerText()).match(/(\d+) reviewed/)[1]);
+    const r0 = await reviewedCount();
+    const btn = page.locator('#listbar button', { hasText: /^Review \(/ });
+    const queueLen = Number((await btn.innerText()).match(/\((\d+)\)/)[1]);
+    await btn.click();
+    await page.waitForSelector('#review');
+    const pos = async () => (await page.locator('#listbar').innerText()).match(/Reviewing (\d+) of (\d+)/).slice(1).map(Number);
+    check(JSON.stringify(await pos()) === JSON.stringify([1, queueLen]), `review queue opened: 1 of ${queueLen}`);
+    const confOf = async () => Number((await page.locator('#review .tag').first().innerText()).match(/(\d+)%/)[1]);
+    const c1 = await confOf();
+    const mid = page.url().match(/#(\d+)/)[1];
+    const minConf = await page.evaluate(async (id) => {
+      const evs = await (await fetch(`/api/matches/${id}/events?reviewed=false`)).json();
+      return Math.round(Math.min(...evs.map((e) => e.confidence)) * 100);
+    }, mid);
+    check(c1 === minConf, `least confident event first (${c1}%)`);
+    const tStart = await page.evaluate(() => document.querySelector('#video').currentTime);
+    check(await page.evaluate(() => !document.querySelector('#video').paused), `review plays the event (from ${tStart.toFixed(1)}s)`);
+    const card = await page.locator('#review').innerText();
+    check(!/\[object|undefined|\bnull\b/.test(card) && /Outcome|Kind|Reason/.test(card), 'review card shows attribute labels and values');
+    await snap('review');
+
+    await page.keyboard.press('ArrowRight');
+    check((await pos())[0] === 2, 'ArrowRight -> next');
+    await page.keyboard.press('ArrowLeft');
+    check((await pos())[0] === 1, 'ArrowLeft -> prev');
+
+    await page.keyboard.press('Enter');
+    await page.waitForFunction((n) => /of (\d+)/.exec(document.querySelector('#listbar').innerText)[1] == n, queueLen - 1);
+    check(await reviewedCount() === r0 + 1, 'Enter confirms: queue -1, reviewed +1');
+    check(await confOf() >= c1, 'queue stays sorted by confidence after confirming');
+
+    await page.keyboard.press('d');
+    check(/Press D again/.test(await page.locator('#review').innerText()), 'D once arms delete (nothing deleted yet)');
+    check((await pos())[1] === queueLen - 1, 'queue unchanged after one D');
+    await page.keyboard.press('d');
+    await page.waitForFunction((n) => /of (\d+)/.exec(document.querySelector('#listbar').innerText)[1] == n, queueLen - 2);
+    check(/(\d+) events/.exec(await page.locator('#mhead .sub').innerText())[1] == total, 'D twice deletes the event');
+
+    await page.keyboard.press('e');
+    const red = page.locator('dialog[open]');
+    await red.waitFor();
+    check(/Edit event/.test(await red.innerText()), 'E opens the editor');
+    await page.keyboard.press('Enter'); // keys go to the dialog, not the queue
+    check((await pos())[1] === queueLen - 2, 'review shortcuts are ignored while the editor is open');
+    await red.locator('select').nth(1).selectOption('');
+    await red.locator('button', { hasText: 'Save' }).click();
+    await page.waitForFunction((n) => /of (\d+)/.exec(document.querySelector('#listbar').innerText)[1] == n, queueLen - 3);
+    check(await reviewedCount() === r0 + 2, 'saving an edit marks it reviewed and advances');
+
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('#review', { state: 'detached' });
+    check(await page.locator('.ev').count() === total, 'Esc exits review back to the list');
+
     // --- invalid edit is rejected with a visible error (t_end < t_start)
     await page.locator('.ev').first().locator('button[title=Edit]').click();
     const bad = page.locator('dialog[open]');

@@ -162,3 +162,38 @@ def test_end_to_end_with_real_video_and_clip(client, match, tmp_path):
     event = client.get(f"/api/matches/{match['id']}/events").json()[5]
     clip = client.get(f"/api/events/{event['id']}/clip")
     assert clip.status_code == 200 and clip.headers["content-type"] == "video/mp4" and len(clip.content) > 1000
+
+
+def test_review_queue_query(client, match, fake_probe):
+    upload(client, match["id"])
+    base = f"/api/matches/{match['id']}/events"
+    first = client.get(base, params={"reviewed": "false", "order": "confidence"}).json()
+    confs = [e["confidence"] for e in first]
+    assert confs == sorted(confs) and not any(e["reviewed"] for e in first)
+
+    # Confirming the head of the queue removes it; the next-least-confident is now first.
+    client.patch(f"/api/events/{first[0]['id']}", json={"reviewed": True})
+    after = client.get(base, params={"reviewed": "false", "order": "confidence"}).json()
+    assert after[0]["id"] == first[1]["id"] and len(after) == len(first) - 1
+    assert [e["id"] for e in client.get(base, params={"reviewed": "true"}).json()] == [first[0]["id"]]
+
+    # Combines with the normal filters (review just the kickouts).
+    kick = client.get(base, params={"reviewed": "false", "order": "confidence", "type": "kickout"}).json()
+    assert kick and all(e["type"] == "kickout" for e in kick)
+
+    assert client.get(base, params={"order": "random"}).status_code == 422
+    assert client.get(base, params={"reviewed": "maybe"}).status_code == 422
+
+
+def test_review_queue_puts_unknown_confidence_first(client, match):
+    base = f"/api/matches/{match['id']}/events"
+    e = client.post(base, json={"type": "free", "t_start": 5, "t_end": 6}).json()
+    client.patch(f"/api/events/{e['id']}", json={"reviewed": False})  # manual tag, confidence None
+    from app.db import SessionLocal
+    from app.models import Event
+    with SessionLocal() as db:
+        db.add(Event(match_id=match["id"], type="free", period=1, t_start=1, t_end=2, attributes={},
+                     confidence=0.1, origin="ai", reviewed=False))
+        db.commit()
+    queue = client.get(base, params={"reviewed": "false", "order": "confidence"}).json()
+    assert [q["confidence"] for q in queue] == [None, 0.1]

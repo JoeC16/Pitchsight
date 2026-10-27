@@ -56,7 +56,7 @@ const freshFilters = () => ({ types: new Set(), team: '', period: '', minConf: 0
 const S = {
   me: null, packs: {}, matches: [], match: null, pack: null,
   events: [], shown: [], shownIds: new Set(), summary: null,
-  filters: freshFilters(), reel: null, poll: null,
+  filters: freshFilters(), reel: null, review: null, poll: null,
 };
 const video = () => $('#video');
 const teamName = (team) => (team === 'home' ? S.match.home_team : team === 'away' ? S.match.away_team : 'Unassigned');
@@ -100,6 +100,7 @@ function renderEmpty() {
 async function openMatch(id) {
   clearInterval(S.poll);
   stopReel();
+  S.review = null;
   try {
     S.match = await api('/matches/' + id);
     S.pack = await getPack(S.match.sport);
@@ -255,7 +256,8 @@ function selectedAttributes() {
 
 async function filtersChanged() {
   await refreshShown();
-  renderFilters(); renderTimeline(); renderList();
+  renderFilters(); renderTimeline();
+  if (S.review) await startReview(); else renderList();
 }
 
 function renderFilters() {
@@ -301,9 +303,12 @@ function attrSummary(e) {
 
 function renderList() {
   const bar = $('#listbar'), list = $('#events');
+  if (S.review) return renderReview(bar, list);
   bar.replaceChildren(
     h('div', null, `${S.shown.length} of ${S.events.length} events`),
     h('div', { style: { display: 'flex', gap: '6px' } },
+      h('button', { class: 'btn small', title: 'Step through unreviewed events, least confident first', disabled: !S.shown.some((e) => !e.reviewed), onclick: startReview },
+        `Review (${S.shown.filter((e) => !e.reviewed).length})`),
       h('button', { class: 'btn small', disabled: !S.shown.length || !S.match.has_video, onclick: () => (S.reel ? stopReel() : startReel()) },
         S.reel ? '■ Stop reel' : `▶ Play reel (${S.shown.length})`),
       h('button', { class: 'btn small', disabled: !S.match.has_video, onclick: () => openEditor(null) }, '+ Tag')),
@@ -342,6 +347,7 @@ function playEvent(e) {
 function startReel() {
   const v = video();
   if (!v || !S.shown.length) return;
+  S.review = null;
   S.reel = { list: [...S.shown], i: 0 };
   playReelItem();
 }
@@ -368,11 +374,137 @@ function stopReel() {
 function onTimeUpdate() {
   updatePlayhead();
   const r = S.reel, v = video();
+  if (S.review && v.currentTime >= S.review.end) {
+    v.pause();
+    S.review.end = Infinity; // pause once at the end of the event; the coach can play on
+  }
   if (r && v.currentTime >= r.list[r.i].t_end + POST) {
     r.i += 1;
     playReelItem();
   }
 }
+
+// ---------- review queue ----------
+// Unreviewed events matching the current filters, least confident first. Same filter query as
+// the list, plus reviewed=false&order=confidence.
+async function startReview() {
+  stopReel();
+  const q = filterQuery();
+  const queue = await api(`/matches/${S.match.id}/events?${q ? q + '&' : ''}reviewed=false&order=confidence`);
+  S.review = { queue, i: 0, end: Infinity, armDelete: null, busy: false };
+  reviewShow();
+}
+
+function exitReview() {
+  if (!S.review) return;
+  clearTimeout(S.review.armDelete);
+  S.review = null;
+  const v = video();
+  if (v) v.pause();
+  renderList();
+}
+
+const reviewCurrent = () => S.review && S.review.queue[S.review.i];
+
+function reviewShow() {
+  const e = reviewCurrent(), v = video();
+  renderList();
+  if (!e || !v) return;
+  S.review.end = e.t_end + POST;
+  v.currentTime = Math.max(0, e.t_start - PRE);
+  v.play().catch(() => {});
+}
+
+function reviewMove(delta) {
+  const r = S.review;
+  if (!r.queue.length) return;
+  r.i = Math.min(r.queue.length - 1, Math.max(0, r.i + delta));
+  clearTimeout(r.armDelete); r.armDelete = null;
+  reviewShow();
+}
+
+// Runs a confirm/edit/delete on the current event; afterwards the event has left the queue.
+async function reviewAct(fn) {
+  const r = S.review, e = reviewCurrent();
+  if (!e || r.busy) return;
+  r.busy = true;
+  try {
+    await fn(e);
+  } catch (err) {
+    r.busy = false;
+    return alert(err.message);
+  }
+  r.busy = false;
+  clearTimeout(r.armDelete); r.armDelete = null;
+  r.queue = r.queue.filter((x) => x.id !== e.id);
+  r.i = Math.min(r.i, Math.max(0, r.queue.length - 1));
+  await loadEvents();
+  renderHead(); renderTimeline(); renderSummary();
+  reviewShow();
+}
+
+const reviewConfirm = () => reviewAct((e) => api(`/events/${e.id}`, { method: 'PATCH', body: { reviewed: true } }));
+
+function reviewEdit() {
+  const e = reviewCurrent();
+  if (!e) return;
+  // Saving or deleting in the editor both take the event out of the queue.
+  openEditor(e, () => reviewAct(async () => {}));
+}
+
+function reviewDelete() {
+  const r = S.review;
+  if (!reviewCurrent()) return;
+  if (!r.armDelete) { // deleting can't be undone: ask for a second press
+    r.armDelete = setTimeout(() => { r.armDelete = null; renderList(); }, 3000);
+    return renderList();
+  }
+  reviewAct((e) => api(`/events/${e.id}`, { method: 'DELETE' }));
+}
+
+function keyBtn(label, key, onclick, cls = '') {
+  return h('button', { class: `btn ${cls}`, onclick }, label, h('kbd', null, key));
+}
+
+function renderReview(bar, list) {
+  const r = S.review, e = reviewCurrent();
+  bar.replaceChildren(
+    h('div', null, e ? `Reviewing ${r.i + 1} of ${r.queue.length}` : 'Review'),
+    h('button', { class: 'btn small', onclick: exitReview }, 'Exit review', h('kbd', null, 'Esc')));
+  if (!e) {
+    return list.replaceChildren(h('div', { class: 'empty-list' }, 'All caught up: nothing left to review with these filters.'));
+  }
+  const t = typeDef(e.type);
+  list.replaceChildren(h('div', { class: 'review', id: 'review' },
+    h('div', { class: 'line1' },
+      h('span', { class: 'badge', style: { background: t.color } }, t.label),
+      h('span', { class: e.team === 'home' ? 'home-c' : e.team === 'away' ? 'away-c' : '' }, teamName(e.team)),
+      e.confidence != null ? h('span', { class: 'tag' }, `${Math.round(e.confidence * 100)}% confident`) : h('span', { class: 'tag' }, 'confidence unknown'),
+      e.origin === 'stub' ? h('span', { class: 'tag demo' }, 'demo') : null),
+    h('div', { class: 'rtime' }, `${fmtTime(e.t_start)}–${fmtTime(e.t_end)} · Half ${e.period}`),
+    h('dl', { class: 'rattrs' }, t.attributes.flatMap((a) => [
+      h('dt', null, a.label), h('dd', null, e.attributes[a.id] ? pretty(e.attributes[a.id]) : '—')])),
+    h('div', { class: 'ractions' },
+      keyBtn('✓ Confirm', 'Enter', reviewConfirm, 'primary'),
+      keyBtn('✎ Edit', 'E', reviewEdit),
+      keyBtn(r.armDelete ? 'Press D again to delete' : '✕ Delete', 'D', reviewDelete, 'danger' + (r.armDelete ? ' armed' : ''))),
+    h('div', { class: 'ractions' },
+      keyBtn('Prev', '←', () => reviewMove(-1)),
+      h('button', { class: 'btn', onclick: reviewShow }, '↻ Replay'),
+      keyBtn('Next', '→', () => reviewMove(1)))));
+}
+
+document.addEventListener('keydown', (ev) => {
+  if (!S.review || document.querySelector('dialog[open]')) return;
+  if (ev.metaKey || ev.ctrlKey || ev.altKey || ev.target.closest('input, select, textarea')) return;
+  const actions = {
+    Enter: reviewConfirm, e: reviewEdit, E: reviewEdit, d: reviewDelete, D: reviewDelete,
+    ArrowRight: () => reviewMove(1), ArrowLeft: () => reviewMove(-1), Escape: exitReview,
+  };
+  if (!actions[ev.key]) return;
+  ev.preventDefault(); // also stops Enter "clicking" a focused button, which would act twice
+  actions[ev.key]();
+});
 
 // ---------- editor (edit existing event or add manual tag) ----------
 function field(label, control) {
@@ -384,7 +516,7 @@ function select(options, value, onchange) {
     options.map(([v, l]) => h('option', { value: v, selected: String(v) === String(value) }, l)));
 }
 
-function openEditor(ev) {
+function openEditor(ev, after = reloadEvents) {
   const m = S.match, pack = S.pack, isNew = !ev, v = video();
   const now = v ? v.currentTime : 0;
   const cur = ev
@@ -415,13 +547,13 @@ function openEditor(ev) {
       if (isNew) await api(`/matches/${m.id}/events`, { method: 'POST', body: payload });
       else await api(`/events/${ev.id}`, { method: 'PATCH', body: payload });
       dlg.close();
-      await reloadEvents();
+      await after();
     } catch (e) { err.textContent = e.message; }
   }
 
   async function remove() {
     if (!confirm('Delete this event?')) return;
-    try { await api(`/events/${ev.id}`, { method: 'DELETE' }); dlg.close(); await reloadEvents(); } catch (e) { err.textContent = e.message; }
+    try { await api(`/events/${ev.id}`, { method: 'DELETE' }); dlg.close(); await after(); } catch (e) { err.textContent = e.message; }
   }
 
   draw();
