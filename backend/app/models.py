@@ -67,6 +67,14 @@ class Match(Base):
     duration_s: Mapped[float | None] = mapped_column(Float, nullable=True)
     fps: Mapped[float | None] = mapped_column(Float, nullable=True)
     detector: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    width: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    height: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    video_codec: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # Browser-friendly copy for playback: none (original is fine) | pending | ready | failed
+    proxy_status: Mapped[str] = mapped_column(String(20), default="none", server_default="none")
+    proxy_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)  # why one was needed
+    proxy_progress: Mapped[float] = mapped_column(Float, default=0.0, server_default="0")
+    proxy_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     events: Mapped[list["Event"]] = relationship(

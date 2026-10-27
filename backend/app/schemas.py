@@ -30,6 +30,12 @@ class MatchOut(BaseModel):
     fps: float | None
     detector: str | None
     has_video: bool
+    width: int | None
+    height: int | None
+    video_codec: str | None
+    proxy_status: str
+    proxy_reason: str | None
+    proxy_progress: float
     created_at: datetime
 
 

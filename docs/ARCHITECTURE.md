@@ -8,6 +8,7 @@ Veo (manual download) -> browser PUT /api/matches/{id}/video (streamed to disk)
         v
   background job: process_match
      probe (ffprobe) -> Detector.detect() -> validate each draft vs sport pack -> store Events
+     -> playback proxy if needed (h264/aac faststart mp4, <=1080p, keyframe every 2s)
         |
         v
   SQL (matches, events)  <-- filter queries --  UI (timeline, chips, reel, editor)
@@ -18,6 +19,12 @@ Veo (manual download) -> browser PUT /api/matches/{id}/video (streamed to disk)
         v
   reel export job: merge overlapping windows -> cut each (clip cache) -> concat (-c copy)
 ```
+
+**Playback proxy.** `proxy.needs_proxy()` transcodes only when the original won't play smoothly
+in a browser: container other than mp4/mov, codec other than h264 8-bit 4:2:0, unusual audio,
+larger than 1080p, over 20 Mbit/s, or keyframes more than 10 s apart (slow seeking). The reason is
+stored on the match. `GET /matches/{id}/video` serves the proxy once ready, else the original.
+Clips and reels always cut from the original.
 
 Downloads of simulated (stub) content carry `DEMO-simulated-event(s)` in the filename, because
 the UI's demo banner doesn't travel with the file.
@@ -64,7 +71,7 @@ barely exists publicly, so a labelled dataset is part of the work.
 | POST/GET | `/matches` | create (metadata only) / list |
 | GET/DELETE | `/matches/{id}` | fetch / delete incl. files |
 | PUT | `/matches/{id}/video` | raw body upload, `X-Filename` header; triggers processing |
-| GET | `/matches/{id}/video` | stream source video (Range supported) |
+| GET | `/matches/{id}/video` | stream playback video: proxy if built, else original (Range supported) |
 | POST | `/matches/{id}/reprocess` | re-run detection, keeping manual/reviewed events |
 | GET | `/matches/{id}/events` | filtered list (see below) |
 | POST | `/matches/{id}/events` | manual tag (validated) |

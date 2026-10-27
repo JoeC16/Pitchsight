@@ -10,7 +10,8 @@ from app.pipeline.interfaces import VideoInfo
 @pytest.fixture()
 def fake_probe(monkeypatch):
     """Uploads in most tests are junk bytes; pretend ffprobe saw a 70-minute video."""
-    monkeypatch.setattr(runner, "probe", lambda path: VideoInfo(duration_s=4200.0, fps=25.0))
+    monkeypatch.setattr(runner, "probe", lambda path: VideoInfo(
+        duration_s=4200.0, fps=25.0, width=1920, height=1080, video_codec="h264", pix_fmt="yuv420p", audio_codec="aac"))
 
 
 def upload(client, match_id, data=b"not-really-a-video", name="game.mp4"):

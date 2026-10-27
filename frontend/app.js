@@ -115,7 +115,7 @@ async function openMatch(id) {
   await loadEvents();
   renderShell();
   renderSidebar();
-  if (['uploaded', 'processing'].includes(S.match.status)) startPolling();
+  if (busy(S.match)) startPolling();
 }
 
 async function loadEvents() {
@@ -173,6 +173,11 @@ function renderBanner() {
   if (m.status === 'processing' || m.status === 'uploaded') {
     parts.push(h('div', { class: 'banner' }, `Analysing match… ${Math.round(m.progress * 100)}%`,
       h('div', { class: 'bar' }, h('div', { style: { width: `${Math.round(m.progress * 100)}%` } }))));
+  }
+  if (m.status === 'ready' && m.proxy_status === 'pending') {
+    const pct = Math.round(m.proxy_progress * 100);
+    parts.push(h('div', { class: 'banner' }, `Preparing smooth playback (${m.proxy_reason}): ${pct}%. Playback may stutter until then.`,
+      h('div', { class: 'bar' }, h('div', { style: { width: `${pct}%` } }))));
   }
   if (m.status === 'failed') {
     parts.push(h('div', { class: 'banner bad' }, `Processing failed: ${m.error || 'unknown error'} `,
@@ -617,21 +622,35 @@ async function reloadEvents() {
 }
 
 // ---------- processing status ----------
+// Still analysing, or still building the playback proxy.
+const busy = (m) => ['uploaded', 'processing'].includes(m.status) || m.proxy_status === 'pending';
+
 function startPolling() {
   clearInterval(S.poll);
   S.poll = setInterval(async () => {
     try {
-      const prev = S.match.status;
+      const prev = S.match;
       S.match = await api('/matches/' + S.match.id);
-      if (S.match.status === 'ready' || S.match.status === 'failed') {
+      if (prev.status !== S.match.status && ['ready', 'failed'].includes(S.match.status)) {
         clearInterval(S.poll);
-        await openMatch(S.match.id);
+        await openMatch(S.match.id); // re-polls if the proxy is still being built
         await refreshMatches();
-      } else if (prev !== S.match.status || S.match.status === 'processing') {
-        renderBanner();
+        return;
       }
+      if (prev.proxy_status !== 'ready' && S.match.proxy_status === 'ready') swapToProxy();
+      renderBanner();
+      if (!busy(S.match)) clearInterval(S.poll);
     } catch (_) { /* transient; try again next tick */ }
   }, 2000);
+}
+
+// Same URL, but the server now serves the proxy: reload in place, keeping the playhead.
+function swapToProxy() {
+  const v = video();
+  if (!v) return;
+  const t = v.currentTime, playing = !v.paused;
+  v.src = `/api/matches/${S.match.id}/video?proxy=1`;
+  v.addEventListener('loadedmetadata', () => { v.currentTime = t; if (playing) v.play().catch(() => {}); }, { once: true });
 }
 
 async function reprocess() {

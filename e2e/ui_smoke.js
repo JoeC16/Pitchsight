@@ -1,7 +1,9 @@
 // Headless browser smoke test of the UI against a running server.
 //
-//   node e2e/ui_smoke.js <video.mp4> [baseUrl] [screenshotDir]
+//   node e2e/ui_smoke.js <video.mp4> [baseUrl] [screenshotDir] [unfriendly.mkv]
 //
+// With the optional 4th argument (a file browsers can't play well, e.g. mpeg4 in .mkv) it also
+// checks the playback-proxy flow.
 // Walks the whole coach flow: create match + upload, wait for processing, filter chips,
 // timeline, reel playback, edit an event, manual tag, clip download. Exits non-zero on
 // the first failed check. Needs `playwright` (pre-installed in the dev container).
@@ -10,7 +12,7 @@ const path = require('path');
 const fs = require('fs');
 const { chromium } = require('playwright');
 
-const [video, base = 'http://localhost:8000', shots = 'e2e/screenshots'] = process.argv.slice(2);
+const [video, base = 'http://localhost:8000', shots = 'e2e/screenshots', proxyVideo] = process.argv.slice(2);
 if (!video) { console.error('usage: node e2e/ui_smoke.js <video.mp4> [baseUrl] [screenshotDir]'); process.exit(2); }
 fs.mkdirSync(shots, { recursive: true });
 
@@ -267,6 +269,28 @@ function check(cond, msg) {
     await page.locator('form.auth button[type=submit]').click();
     await page.waitForSelector('.match-item');
     check(await page.locator('.match-item', { hasText: 'UI smoke test' }).count() === 1, 'signed back in: match still listed');
+
+    if (proxyVideo) {
+      // --- playback proxy: upload a browser-unfriendly file
+      await page.click('#new-match');
+      const pd = page.locator('dialog[open]');
+      const pin = pd.locator('input[type=text]');
+      await pin.nth(0).fill('Home'); await pin.nth(1).fill('Away'); await pin.nth(2).fill('Proxy test');
+      await pd.locator('input[type=file]').setInputFiles(proxyVideo);
+      await pd.locator('button.primary').click();
+      await page.waitForSelector('dialog[open]', { state: 'detached', timeout: 120000 });
+      await page.waitForFunction(() => /Preparing smooth playback/.test(document.querySelector('#banner').innerText), null, { timeout: 60000 });
+      check(true, 'proxy banner shown while the browser-friendly copy is built');
+      await snap('proxy-pending');
+      await page.waitForFunction(() => !/Preparing smooth playback/.test(document.querySelector('#banner').innerText), null, { timeout: 300000 });
+      const mid2 = page.url().match(/#(\d+)/)[1];
+      const pm = await page.evaluate(async (id) => (await fetch('/api/matches/' + id)).json(), mid2);
+      check(pm.proxy_status === 'ready' && pm.video_codec === 'mpeg4', `proxy ready for ${pm.video_codec} upload (${pm.proxy_reason})`);
+      await page.evaluate(() => { const v = document.querySelector('#video'); v.muted = true; return v.play(); });
+      await page.waitForFunction(() => document.querySelector('#video').currentTime > 0.5, null, { timeout: 20000 });
+      const vw = await page.evaluate(() => document.querySelector('#video').videoWidth);
+      check(vw === 1280, `proxy plays in the browser (${vw}px wide)`);
+    }
 
     check(errors.length === 0, 'no JS errors in console: ' + JSON.stringify(errors));
     console.log('\nUI SMOKE TEST PASSED');

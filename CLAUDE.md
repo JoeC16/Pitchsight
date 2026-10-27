@@ -41,6 +41,7 @@ backend/app/
   analytics.py            generic summary: counts, breakdowns, score (driven by pack `scoring`)
   clips.py                ffmpeg clip cutting with on-disk cache
   reels.py                reel export job: merge windows, cut, concat
+  proxy.py                needs_proxy() rules + browser playback transcode
   routers/                auth, sports, matches (upload/video/events/summary/reels), events, reels
   pipeline/
     interfaces.py         Detector protocol, EventDraft, VideoInfo   <- the key seam
@@ -80,8 +81,7 @@ docs/ROADMAP.md           phased plan with exit criteria and risks
 
 ## Not built yet (don't assume these exist)
 
-Real detection (everything in `pipeline/real.py`),
-video proxy transcoding for browser playback, a job queue and GPU
+Real detection (everything in `pipeline/real.py`), a job queue and GPU
 worker (processing runs in-process via FastAPI BackgroundTasks), Postgres and object storage
 (sqlite + local disk), Veo import automation
 (users download the file from Veo and upload it by hand).

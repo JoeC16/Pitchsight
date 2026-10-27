@@ -8,6 +8,7 @@ DATA_DIR = Path(os.environ.get("PITCHSIGHT_DATA_DIR", ROOT / "data"))
 VIDEO_DIR = DATA_DIR / "videos"
 CLIP_DIR = DATA_DIR / "clips"
 REEL_DIR = DATA_DIR / "reels"
+PROXY_DIR = DATA_DIR / "proxies"
 DB_URL = os.environ.get("PITCHSIGHT_DB_URL", f"sqlite:///{DATA_DIR / 'pitchsight.db'}")
 SPORT_PACK_DIR = Path(os.environ.get("PITCHSIGHT_SPORT_PACKS", ROOT / "sport_packs"))
 FRONTEND_DIR = ROOT / "frontend"
@@ -30,3 +31,7 @@ ALLOW_SIGNUP = os.environ.get("PITCHSIGHT_ALLOW_SIGNUP", "true").lower() == "tru
 SESSION_DAYS = float(os.environ.get("PITCHSIGHT_SESSION_DAYS", "30"))
 # Set true when served over HTTPS so the session cookie is never sent in clear text.
 SECURE_COOKIES = os.environ.get("PITCHSIGHT_SECURE_COOKIES", "false").lower() == "true"
+
+# Browser playback proxy: "auto" transcodes only when the original won't play smoothly
+# (see proxy.needs_proxy), "always" or "never" force it.
+PROXY_MODE = os.environ.get("PITCHSIGHT_PROXY", "auto")

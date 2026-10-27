@@ -12,7 +12,7 @@ from .routers import auth, events, matches, reels, sports
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    for directory in (config.VIDEO_DIR, config.CLIP_DIR, config.REEL_DIR):
+    for directory in (config.VIDEO_DIR, config.CLIP_DIR, config.REEL_DIR, config.PROXY_DIR):
         directory.mkdir(parents=True, exist_ok=True)
     upgrade_db()
 
@@ -22,6 +22,9 @@ async def lifespan(app: FastAPI):
             update(models.Match)
             .where(models.Match.status.in_(("uploaded", "processing")))
             .values(status="failed", error="Interrupted by a server restart - use Reprocess")
+        )
+        db.execute(
+            update(models.Match).where(models.Match.proxy_status == "pending").values(proxy_status="failed")
         )
         db.execute(
             update(models.Reel)

@@ -8,6 +8,7 @@ import logging
 from pathlib import Path
 
 from .. import config, taxonomy
+from ..proxy import build_proxy, needs_proxy
 from ..db import SessionLocal
 from ..models import Event, Match
 from . import get_detector
@@ -28,6 +29,10 @@ def process_match(match_id: int) -> None:
         video = Path(match.video_path)
         info = probe(video)
         match.duration_s, match.fps = info.duration_s, info.fps
+        match.width, match.height, match.video_codec = info.width, info.height, info.video_codec
+        if match.proxy_status != "ready":
+            match.proxy_reason = needs_proxy(info, video)
+            match.proxy_status = "pending" if match.proxy_reason else "none"
         db.commit()
 
         detector = get_detector(config.DETECTOR)
@@ -56,12 +61,18 @@ def process_match(match_id: int) -> None:
         db.commit()
         if dropped:
             log.warning("match %s: %d invalid drafts dropped", match_id, dropped)
+        # After detection so events show up first; until it's ready the original is served.
+        if match.proxy_status == "pending":
+            db.close()
+            build_proxy(match_id)
     except Exception as exc:  # noqa: BLE001 - surface any failure on the match, don't crash the worker
         db.rollback()
         log.exception("processing match %s failed", match_id)
         match = db.get(Match, match_id)
         if match is not None:
             match.status, match.error = "failed", str(exc)[:500]
+            if match.proxy_status == "pending":
+                match.proxy_status = "none"  # never started
             db.commit()
     finally:
         db.close()

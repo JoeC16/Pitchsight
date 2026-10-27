@@ -16,6 +16,11 @@ class VideoInfo:
     fps: float | None = None
     width: int | None = None
     height: int | None = None
+    video_codec: str | None = None   # ffprobe codec_name, e.g. "h264", "hevc"
+    pix_fmt: str | None = None       # e.g. "yuv420p"
+    audio_codec: str | None = None   # None when there is no audio stream
+    bit_rate: int | None = None      # bits/s, whole file
+    max_keyframe_gap_s: float | None = None
 
 
 @dataclass

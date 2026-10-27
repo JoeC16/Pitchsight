@@ -50,8 +50,9 @@ def get_match(match_id: int, user: CurrentUser, db: Session = Depends(get_db)):
 @router.delete("/{match_id}", status_code=204)
 def delete_match(match_id: int, user: CurrentUser, db: Session = Depends(get_db)):
     match = _get_match(db, match_id, user)
-    if match.video_path:
-        Path(match.video_path).unlink(missing_ok=True)
+    for path in (match.video_path, match.proxy_path):
+        if path:
+            Path(path).unlink(missing_ok=True)
     for directory in (config.CLIP_DIR, config.REEL_DIR):
         for f in directory.glob(f"m{match.id}_*.mp4"):
             f.unlink(missing_ok=True)
@@ -103,7 +104,10 @@ async def upload_video(
 
 @router.get("/{match_id}/video")
 def get_video(match_id: int, user: CurrentUser, db: Session = Depends(get_db)):
+    """The video for playback: the browser-friendly proxy once it's built, else the original."""
     match = _get_match(db, match_id, user)
+    if match.proxy_status == "ready" and match.proxy_path and Path(match.proxy_path).exists():
+        return FileResponse(match.proxy_path, media_type="video/mp4")
     if not match.video_path or not Path(match.video_path).exists():
         raise HTTPException(404, "No video")
     media_type = mimetypes.guess_type(match.video_path)[0] or "video/mp4"

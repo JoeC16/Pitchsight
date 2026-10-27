@@ -44,6 +44,7 @@ code changes needed. Copy `soccer.yaml` to start a new sport.
 | `PITCHSIGHT_MAX_UPLOAD_GB` | `20` | upload size cap |
 | `PITCHSIGHT_CLIP_PRE_S` / `_POST_S` | `5` / `3` | clip padding in seconds |
 | `PITCHSIGHT_MAX_REEL_EVENTS` | `300` | most events allowed in one exported reel |
+| `PITCHSIGHT_PROXY` | `auto` | browser playback proxy: `auto` (only when needed), `always`, `never` |
 | `PITCHSIGHT_DB_URL` | sqlite in data dir | any SQLAlchemy URL |
 | `PITCHSIGHT_ALLOW_SIGNUP` | `true` | allow `POST /api/auth/register` (creates a new club + admin) |
 | `PITCHSIGHT_SESSION_DAYS` | `30` | login session lifetime |
