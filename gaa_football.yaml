@@ -1,0 +1,56 @@
+# Sport pack: GAA football.
+# This file is the single source of truth for what can be tagged. The API validates
+# events against it and the UI builds its filters from it. To add a classification,
+# add a value or attribute here -- no code changes needed.
+#
+# Event.team semantics (per event type) are documented in `team_means`.
+
+sport: gaa_football
+name: GAA Football
+periods: 2
+period_minutes: 35
+
+scoring:
+  event: shot
+  attribute: outcome
+  values: { goal: 3, point: 1, two_pointer: 2 }   # two_pointer = score from outside the arc (competition rule dependent)
+  display: gaa                                     # renders as goals-points (total), e.g. 1-08 (11)
+
+event_types:
+  - id: shot
+    label: Shot
+    color: "#f5a524"
+    team_means: Team taking the shot
+    attributes:
+      - { id: outcome,  label: Outcome,  values: [goal, point, two_pointer, wide, short, saved, blocked, post] }
+      - { id: source,   label: Source,   values: [from_play, free, forty_five, penalty, sideline_cut] }
+      - { id: method,   label: Method,   values: [hand, left_foot, right_foot] }
+      - { id: pressure, label: Pressure, values: [none, low, high] }
+      - { id: side,     label: Side,     values: [left, centre, right] }
+      - { id: zone,     label: Zone,     values: [own_third, middle_third, attacking_third, inside_45] }
+      - { id: origin,   label: Origin,   values: [turnover, kickout, restart, sustained_possession] }
+
+  - id: turnover
+    label: Turnover
+    color: "#ef5b5b"
+    team_means: Team that WON possession
+    attributes:
+      - { id: kind, label: Kind, values: [tackle, interception, forced_error, unforced_error, foul_won] }
+      - { id: zone, label: Zone, values: [own_third, middle_third, attacking_third, inside_45] }
+
+  - id: kickout
+    label: Kickout
+    color: "#4aa3ff"
+    team_means: Team taking the kickout
+    attributes:
+      - { id: outcome, label: Outcome, values: [retained_clean, retained_break, lost_clean, lost_break] }
+      - { id: length,  label: Length,  values: [short, medium, long] }
+      - { id: target,  label: Target,  values: [left, centre, right] }
+
+  - id: free
+    label: Free conceded
+    color: "#b07cff"
+    team_means: Team that CONCEDED the free
+    attributes:
+      - { id: reason, label: Reason, values: [tackle, over_carry, handpass_throw, other] }
+      - { id: zone,   label: Zone,   values: [own_third, middle_third, attacking_third, inside_45] }

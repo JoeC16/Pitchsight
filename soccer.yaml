@@ -1,0 +1,41 @@
+# Sport pack: soccer (association football). See gaa_football.yaml for conventions.
+
+sport: soccer
+name: Soccer
+periods: 2
+period_minutes: 45
+
+scoring:
+  event: shot
+  attribute: outcome
+  values: { goal: 1 }
+  display: goals
+
+event_types:
+  - id: shot
+    label: Shot
+    color: "#f5a524"
+    team_means: Team taking the shot
+    attributes:
+      - { id: outcome,  label: Outcome,  values: [goal, on_target_saved, off_target, blocked, woodwork] }
+      - { id: type,     label: Type,     values: [open_play, header, penalty, direct_free_kick, set_piece] }
+      - { id: foot,     label: Body part, values: [left, right, head] }
+      - { id: zone,     label: Zone,     values: [outside_box, inside_box, six_yard_box] }
+      - { id: pressure, label: Pressure, values: [none, low, high] }
+      - { id: origin,   label: Origin,   values: [turnover, set_piece, build_up, counter_attack] }
+
+  - id: turnover
+    label: Turnover
+    color: "#ef5b5b"
+    team_means: Team that WON possession
+    attributes:
+      - { id: kind, label: Kind, values: [tackle, interception, forced_error, unforced_error] }
+      - { id: zone, label: Zone, values: [own_third, middle_third, attacking_third] }
+
+  - id: set_piece
+    label: Set piece
+    color: "#4aa3ff"
+    team_means: Team taking the set piece
+    attributes:
+      - { id: kind,    label: Kind,    values: [corner, free_kick, throw_in, goal_kick] }
+      - { id: outcome, label: Outcome, values: [retained, lost, led_to_shot] }

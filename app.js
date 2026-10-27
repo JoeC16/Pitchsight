@@ -1,0 +1,537 @@
+'use strict';
+// PitchSight UI. Plain JS, no build step. All user-supplied text is inserted via
+// textContent (see h()), never innerHTML.
+
+const PRE = 5, POST = 3; // reel lead-in / follow-through seconds (mirrors server clip padding)
+
+// ---------- helpers ----------
+const $ = (sel, el = document) => el.querySelector(sel);
+
+function h(tag, props, ...kids) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(props || {})) {
+    if (v == null || v === false) continue;
+    if (k === 'class') el.className = v;
+    else if (k === 'style') Object.assign(el.style, v);
+    else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+    else if (v === true) el.setAttribute(k, '');
+    else el.setAttribute(k, v);
+  }
+  for (const kid of kids.flat()) {
+    if (kid == null || kid === false) continue;
+    el.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
+  }
+  return el;
+}
+
+const pretty = (s) => String(s).replace(/_/g, ' ');
+const fmtTime = (t) => {
+  t = Math.max(0, Math.floor(t));
+  return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+};
+
+async function api(path, { method = 'GET', body } = {}) {
+  const res = await fetch('/api' + path, {
+    method,
+    headers: body !== undefined ? { 'Content-Type': 'application/json' } : {},
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) {
+    let msg = res.statusText;
+    try {
+      const j = await res.json();
+      msg = typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail);
+    } catch (_) { /* non-JSON error body */ }
+    throw new Error(msg);
+  }
+  return res.status === 204 ? null : res.json();
+}
+
+// ---------- state ----------
+const freshFilters = () => ({ types: new Set(), team: '', period: '', minConf: 0, attrs: {} });
+const S = {
+  packs: {}, matches: [], match: null, pack: null,
+  events: [], shown: [], shownIds: new Set(), summary: null,
+  filters: freshFilters(), reel: null, poll: null,
+};
+const video = () => $('#video');
+const teamName = (team) => (team === 'home' ? S.match.home_team : team === 'away' ? S.match.away_team : 'Unassigned');
+const typeDef = (id) => S.pack.event_types.find((t) => t.id === id);
+
+async function getPack(sport) {
+  if (!S.packs[sport]) S.packs[sport] = await api('/sports/' + sport);
+  return S.packs[sport];
+}
+
+// ---------- sidebar ----------
+async function refreshMatches() {
+  S.matches = await api('/matches');
+  renderSidebar();
+}
+
+function renderSidebar() {
+  const list = $('#match-list');
+  list.replaceChildren(
+    ...S.matches.map((m) =>
+      h('div', { class: 'match-item' + (S.match && S.match.id === m.id ? ' active' : ''), onclick: () => openMatch(m.id) },
+        h('div', { class: 't' }, m.title),
+        h('div', { class: 's' }, h('span', { class: 'dot ' + m.status }), `${m.home_team} v ${m.away_team}`)),
+    ),
+    S.matches.length ? null : h('div', { class: 's', style: { color: 'var(--muted)', padding: '4px' } }, 'No matches yet'),
+  );
+}
+
+// ---------- match view ----------
+function renderEmpty() {
+  S.match = null;
+  $('#main').replaceChildren(
+    h('div', { class: 'empty' },
+      h('h2', null, 'Analyse a match'),
+      h('p', null, 'Download the game from Veo, then upload it here.'),
+      h('button', { class: 'btn primary', onclick: openUpload }, '+ New match')),
+  );
+  renderSidebar();
+}
+
+async function openMatch(id) {
+  clearInterval(S.poll);
+  stopReel();
+  try {
+    S.match = await api('/matches/' + id);
+    S.pack = await getPack(S.match.sport);
+  } catch (e) {
+    location.hash = '';
+    return renderEmpty();
+  }
+  S.filters = freshFilters();
+  location.hash = String(id);
+  await loadEvents();
+  renderShell();
+  renderSidebar();
+  if (['uploaded', 'processing'].includes(S.match.status)) startPolling();
+}
+
+async function loadEvents() {
+  const m = S.match;
+  [S.events, S.summary] = await Promise.all([api(`/matches/${m.id}/events`), api(`/matches/${m.id}/summary`)]);
+  await refreshShown();
+}
+
+async function refreshShown() {
+  const q = filterQuery();
+  S.shown = q ? await api(`/matches/${S.match.id}/events?${q}`) : S.events;
+  S.shownIds = new Set(S.shown.map((e) => e.id));
+}
+
+function filterQuery() {
+  const f = S.filters, p = new URLSearchParams();
+  if (f.types.size) p.set('type', [...f.types].join(','));
+  if (f.team) p.set('team', f.team);
+  if (f.period) p.set('period', f.period);
+  if (f.minConf > 0) p.set('min_conf', f.minConf);
+  for (const [k, set] of Object.entries(f.attrs)) if (set.size) p.set('attr.' + k, [...set].join(','));
+  return p.toString();
+}
+
+function renderShell() {
+  const m = S.match;
+  $('#main').replaceChildren(
+    h('div', { class: 'center' },
+      h('div', { id: 'banner' }),
+      h('div', { class: 'mhead', id: 'mhead' }),
+      h('div', { class: 'player' },
+        m.has_video
+          ? h('video', { id: 'video', controls: true, preload: 'metadata', src: `/api/matches/${m.id}/video` })
+          : h('div', { class: 'noval' }, 'No video uploaded')),
+      h('div', { class: 'timeline', id: 'timeline', onclick: onTimelineClick }),
+      h('div', { id: 'summary' })),
+    h('aside', { class: 'right' },
+      h('div', { class: 'filters', id: 'filters' }),
+      h('div', { class: 'listbar', id: 'listbar' }),
+      h('div', { class: 'events', id: 'events' })),
+  );
+  const v = video();
+  if (v) {
+    v.addEventListener('timeupdate', onTimeUpdate);
+    v.addEventListener('pause', () => { /* reel keeps its place if the user pauses */ });
+  }
+  renderBanner(); renderHead(); renderTimeline(); renderSummary(); renderFilters(); renderList();
+}
+
+function renderBanner() {
+  const m = S.match, box = $('#banner');
+  if (!box) return;
+  const parts = [];
+  if (m.status === 'processing' || m.status === 'uploaded') {
+    parts.push(h('div', { class: 'banner' }, `Analysing match… ${Math.round(m.progress * 100)}%`,
+      h('div', { class: 'bar' }, h('div', { style: { width: `${Math.round(m.progress * 100)}%` } }))));
+  }
+  if (m.status === 'failed') {
+    parts.push(h('div', { class: 'banner bad' }, `Processing failed: ${m.error || 'unknown error'} `,
+      m.has_video ? h('button', { class: 'btn small', onclick: reprocess }, 'Retry') : null));
+  }
+  if (m.detector === 'stub') {
+    parts.push(h('div', { class: 'banner warn' },
+      'Demo data: events are simulated and do not match what happens in the video. Real detection is not built yet.'));
+  }
+  box.replaceChildren(...parts);
+}
+
+function renderHead() {
+  const m = S.match, sc = S.summary && S.summary.score;
+  $('#mhead').replaceChildren(
+    h('div', null,
+      h('h1', null, m.title),
+      h('div', { class: 'sub' }, [m.played_on, S.pack.name, `${S.summary.total_events} events, ${S.summary.reviewed_events} reviewed`].filter(Boolean).join(' · '))),
+    sc ? h('div', { class: 'scoreline' },
+      h('span', { class: 'home-c' }, sc.home.display), h('small', null, `${m.home_team} v ${m.away_team}`), h('span', { class: 'away-c' }, sc.away.display)) : null,
+  );
+}
+
+function renderSummary() {
+  const sum = S.summary, m = S.match;
+  $('#summary').replaceChildren(
+    h('div', { class: 'ftitle' }, `Counts (${m.home_team} / ${m.away_team})`),
+    h('div', { class: 'cards' },
+      ...S.pack.event_types.map((t) =>
+        h('div', { class: 'card' },
+          h('div', { class: 'n' }, h('span', { class: 'sw dot', style: { background: t.color } }), t.label),
+          h('div', { class: 'v' }, h('span', { class: 'home-c' }, sum.counts[t.id].home), h('span', { class: 'away-c' }, sum.counts[t.id].away))))),
+  );
+}
+
+// ---------- timeline ----------
+function renderTimeline() {
+  const tl = $('#timeline'), dur = S.match.duration_s;
+  if (!tl) return;
+  if (!dur) return tl.replaceChildren();
+  const marks = S.events.map((e) =>
+    h('div', {
+      class: 'mk' + (S.shownIds.has(e.id) ? '' : ' dim'),
+      title: `${fmtTime(e.t_start)} ${typeDef(e.type).label}`,
+      style: { left: `${(e.t_start / dur) * 100}%`, width: `${Math.max(0.15, ((e.t_end - e.t_start) / dur) * 100)}%`, background: typeDef(e.type).color },
+    }));
+  const halves = [];
+  for (let i = 1; i < S.pack.periods; i++) halves.push(h('div', { class: 'half', style: { left: `${(i / S.pack.periods) * 100}%` } }));
+  tl.replaceChildren(...halves, ...marks, h('div', { class: 'head', id: 'playhead' }));
+  updatePlayhead();
+}
+
+function onTimelineClick(ev) {
+  const v = video(), dur = S.match.duration_s;
+  if (!v || !dur) return;
+  const rect = ev.currentTarget.getBoundingClientRect();
+  stopReel();
+  v.currentTime = ((ev.clientX - rect.left) / rect.width) * dur;
+}
+
+function updatePlayhead() {
+  const v = video(), head = $('#playhead'), dur = S.match && S.match.duration_s;
+  if (v && head && dur) head.style.left = `${(v.currentTime / dur) * 100}%`;
+}
+
+// ---------- filters ----------
+const toggle = (set, v) => (set.has(v) ? set.delete(v) : set.add(v));
+
+function chip(label, on, onclick, color) {
+  return h('button', { class: 'chip' + (on ? ' on' : ''), onclick },
+    color ? h('span', { class: 'sw', style: { background: color } }) : null, label);
+}
+
+function selectedAttributes() {
+  const out = new Map();
+  for (const id of S.filters.types) {
+    for (const a of typeDef(id).attributes) {
+      if (!out.has(a.id)) out.set(a.id, { id: a.id, label: a.label, values: [] });
+      for (const v of a.values) if (!out.get(a.id).values.includes(v)) out.get(a.id).values.push(v);
+    }
+  }
+  return [...out.values()];
+}
+
+async function filtersChanged() {
+  await refreshShown();
+  renderFilters(); renderTimeline(); renderList();
+}
+
+function renderFilters() {
+  const f = S.filters, m = S.match, root = $('#filters');
+  const teamOpts = [['', 'Both'], ['home', m.home_team], ['away', m.away_team]];
+  const periodOpts = [['', 'All'], ...Array.from({ length: S.pack.periods }, (_, i) => [String(i + 1), `Half ${i + 1}`])];
+  const sections = [
+    h('div', { class: 'ftitle' }, 'Event type'),
+    h('div', { class: 'chips' }, S.pack.event_types.map((t) =>
+      chip(t.label, f.types.has(t.id), () => {
+        toggle(f.types, t.id);
+        const valid = new Set(selectedAttributes().map((a) => a.id));
+        for (const k of Object.keys(f.attrs)) if (!valid.has(k)) delete f.attrs[k];
+        filtersChanged();
+      }, t.color))),
+    h('div', { class: 'ftitle' }, 'Team'),
+    h('div', { class: 'chips' }, teamOpts.map(([v, l]) => chip(l, f.team === v, () => { f.team = v; filtersChanged(); }))),
+    h('div', { class: 'ftitle' }, 'Half'),
+    h('div', { class: 'chips' }, periodOpts.map(([v, l]) => chip(l, f.period === v, () => { f.period = v; filtersChanged(); }))),
+  ];
+  for (const a of selectedAttributes()) {
+    const set = f.attrs[a.id] || (f.attrs[a.id] = new Set());
+    sections.push(
+      h('div', { class: 'ftitle' }, a.label),
+      h('div', { class: 'chips' }, a.values.map((v) => chip(pretty(v), set.has(v), () => { toggle(set, v); filtersChanged(); }))));
+  }
+  sections.push(
+    h('div', { class: 'ftitle' }, 'Minimum AI confidence'),
+    h('div', { class: 'slider' },
+      h('input', { type: 'range', min: 0, max: 100, step: 5, value: Math.round(f.minConf * 100),
+        onchange: (e) => { f.minConf = Number(e.target.value) / 100; filtersChanged(); },
+        oninput: (e) => { e.target.nextSibling.textContent = `${e.target.value}%`; } }),
+      h('span', null, `${Math.round(f.minConf * 100)}%`)),
+    h('div', { style: { marginTop: '10px' } },
+      h('button', { class: 'btn small', onclick: () => { S.filters = freshFilters(); filtersChanged(); } }, 'Reset filters')));
+  root.replaceChildren(...sections);
+}
+
+// ---------- event list ----------
+function attrSummary(e) {
+  return Object.values(e.attributes || {}).map(pretty).join(' · ');
+}
+
+function renderList() {
+  const bar = $('#listbar'), list = $('#events');
+  bar.replaceChildren(
+    h('div', null, `${S.shown.length} of ${S.events.length} events`),
+    h('div', { style: { display: 'flex', gap: '6px' } },
+      h('button', { class: 'btn small', disabled: !S.shown.length || !S.match.has_video, onclick: () => (S.reel ? stopReel() : startReel()) },
+        S.reel ? '■ Stop reel' : `▶ Play reel (${S.shown.length})`),
+      h('button', { class: 'btn small', disabled: !S.match.has_video, onclick: () => openEditor(null) }, '+ Tag')),
+  );
+  if (!S.shown.length) {
+    return list.replaceChildren(h('div', { class: 'empty-list' }, S.events.length ? 'No events match these filters.' : 'No events yet.'));
+  }
+  list.replaceChildren(...S.shown.map((e) => {
+    const t = typeDef(e.type);
+    const playing = S.reel && S.reel.list[S.reel.i] && S.reel.list[S.reel.i].id === e.id;
+    return h('div', { class: 'ev' + (playing ? ' playing' : ''), id: 'ev-' + e.id, onclick: () => playEvent(e) },
+      h('div', { class: 'time' }, fmtTime(e.t_start)),
+      h('div', null,
+        h('div', { class: 'line1' },
+          h('span', { class: 'badge', style: { background: t.color } }, t.label),
+          h('span', { class: e.team === 'home' ? 'home-c' : e.team === 'away' ? 'away-c' : '' }, teamName(e.team)),
+          e.reviewed ? h('span', { class: 'tag ok' }, '✓ reviewed') : null,
+          e.origin === 'stub' && !e.reviewed ? h('span', { class: 'tag demo' }, 'demo') : null,
+          e.confidence != null && !e.reviewed ? h('span', { class: 'tag' }, `${Math.round(e.confidence * 100)}%`) : null),
+        h('div', { class: 'attrs' }, attrSummary(e) || 'unclassified')),
+      h('div', { class: 'acts' },
+        h('button', { class: 'btn small', title: 'Edit', onclick: (ev) => { ev.stopPropagation(); openEditor(e); } }, '✎'),
+        h('a', { class: 'btn small', title: 'Download clip', href: `/api/events/${e.id}/clip`, download: '', onclick: (ev) => ev.stopPropagation() }, '⬇')));
+  }));
+}
+
+// ---------- playback + reel ----------
+function playEvent(e) {
+  const v = video();
+  if (!v) return;
+  stopReel();
+  v.currentTime = Math.max(0, e.t_start - PRE);
+  v.play().catch(() => {});
+}
+
+function startReel() {
+  const v = video();
+  if (!v || !S.shown.length) return;
+  S.reel = { list: [...S.shown], i: 0 };
+  playReelItem();
+}
+
+function playReelItem() {
+  const r = S.reel, v = video();
+  if (!r || !v) return;
+  if (r.i >= r.list.length) return stopReel();
+  v.currentTime = Math.max(0, r.list[r.i].t_start - PRE);
+  v.play().catch(() => {});
+  renderList();
+  const row = $('#ev-' + r.list[r.i].id);
+  if (row) row.scrollIntoView({ block: 'nearest' });
+}
+
+function stopReel() {
+  if (!S.reel) return;
+  S.reel = null;
+  const v = video();
+  if (v) v.pause();
+  if ($('#events')) renderList();
+}
+
+function onTimeUpdate() {
+  updatePlayhead();
+  const r = S.reel, v = video();
+  if (r && v.currentTime >= r.list[r.i].t_end + POST) {
+    r.i += 1;
+    playReelItem();
+  }
+}
+
+// ---------- editor (edit existing event or add manual tag) ----------
+function field(label, control) {
+  return h('div', { class: 'field' }, h('label', null, label), control);
+}
+
+function select(options, value, onchange) {
+  return h('select', { onchange: (e) => onchange(e.target.value) },
+    options.map(([v, l]) => h('option', { value: v, selected: String(v) === String(value) }, l)));
+}
+
+function openEditor(ev) {
+  const m = S.match, pack = S.pack, isNew = !ev, v = video();
+  const now = v ? v.currentTime : 0;
+  const cur = ev
+    ? { ...ev, attributes: { ...ev.attributes } }
+    : { type: pack.event_types[0].id, team: 'home', period: 1, t_start: Number(now.toFixed(1)), t_end: Number((now + 3).toFixed(1)), attributes: {} };
+  const dlg = h('dialog');
+  const body = h('div');
+  const err = h('div', { class: 'err' });
+
+  function draw() {
+    const et = typeDef(cur.type);
+    body.replaceChildren(
+      field('Type', select(pack.event_types.map((t) => [t.id, t.label]), cur.type, (val) => { cur.type = val; cur.attributes = {}; draw(); })),
+      h('div', { class: 'row' },
+        field('Team', select([['home', m.home_team], ['away', m.away_team], ['', 'Unassigned']], cur.team || '', (val) => { cur.team = val || null; })),
+        field('Half', select(Array.from({ length: pack.periods }, (_, i) => [i + 1, `Half ${i + 1}`]), cur.period, (val) => { cur.period = Number(val); }))),
+      h('div', { class: 'row' },
+        field('Start (s)', h('input', { type: 'number', step: '0.1', min: '0', value: cur.t_start, oninput: (e) => { cur.t_start = Number(e.target.value); } })),
+        field('End (s)', h('input', { type: 'number', step: '0.1', min: '0', value: cur.t_end, oninput: (e) => { cur.t_end = Number(e.target.value); } }))),
+      ...et.attributes.map((a) =>
+        field(a.label, select([['', '— unclassified —'], ...a.values.map((val) => [val, pretty(val)])], cur.attributes[a.id] || '',
+          (val) => { if (val) cur.attributes[a.id] = val; else delete cur.attributes[a.id]; }))));
+  }
+
+  async function save() {
+    const payload = { type: cur.type, team: cur.team, period: cur.period, t_start: cur.t_start, t_end: cur.t_end, attributes: cur.attributes };
+    try {
+      if (isNew) await api(`/matches/${m.id}/events`, { method: 'POST', body: payload });
+      else await api(`/events/${ev.id}`, { method: 'PATCH', body: payload });
+      dlg.close();
+      await reloadEvents();
+    } catch (e) { err.textContent = e.message; }
+  }
+
+  async function remove() {
+    if (!confirm('Delete this event?')) return;
+    try { await api(`/events/${ev.id}`, { method: 'DELETE' }); dlg.close(); await reloadEvents(); } catch (e) { err.textContent = e.message; }
+  }
+
+  draw();
+  dlg.append(
+    h('h3', null, isNew ? 'Tag an event' : 'Edit event'), body, err,
+    h('div', { class: 'actions' },
+      isNew ? null : h('button', { class: 'btn danger', onclick: remove }, 'Delete'),
+      h('span', { class: 'spacer' }),
+      h('button', { class: 'btn', onclick: () => dlg.close() }, 'Cancel'),
+      h('button', { class: 'btn primary', onclick: save }, 'Save')));
+  dlg.addEventListener('close', () => dlg.remove());
+  document.body.append(dlg);
+  dlg.showModal();
+}
+
+async function reloadEvents() {
+  await loadEvents();
+  renderHead(); renderTimeline(); renderSummary(); renderFilters(); renderList();
+}
+
+// ---------- processing status ----------
+function startPolling() {
+  clearInterval(S.poll);
+  S.poll = setInterval(async () => {
+    try {
+      const prev = S.match.status;
+      S.match = await api('/matches/' + S.match.id);
+      if (S.match.status === 'ready' || S.match.status === 'failed') {
+        clearInterval(S.poll);
+        await openMatch(S.match.id);
+        await refreshMatches();
+      } else if (prev !== S.match.status || S.match.status === 'processing') {
+        renderBanner();
+      }
+    } catch (_) { /* transient; try again next tick */ }
+  }, 2000);
+}
+
+async function reprocess() {
+  try {
+    await api(`/matches/${S.match.id}/reprocess`, { method: 'POST' });
+    await openMatch(S.match.id);
+  } catch (e) { alert(e.message); }
+}
+
+// ---------- upload ----------
+function putVideo(id, file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const x = new XMLHttpRequest();
+    x.open('PUT', `/api/matches/${id}/video`);
+    x.setRequestHeader('X-Filename', encodeURIComponent(file.name));
+    x.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(e.loaded / e.total); };
+    x.onload = () => {
+      if (x.status < 300) return resolve(JSON.parse(x.responseText));
+      let msg = `Upload failed (${x.status})`;
+      try { const j = JSON.parse(x.responseText); if (typeof j.detail === 'string') msg = j.detail; } catch (_) { /* keep default */ }
+      reject(new Error(msg));
+    };
+    x.onerror = () => reject(new Error('Network error during upload'));
+    x.send(file);
+  });
+}
+
+async function openUpload() {
+  const sports = await api('/sports');
+  const f = { sport: sports[0].sport, home: '', away: '', title: '', date: '', file: null };
+  const dlg = h('dialog');
+  const err = h('div', { class: 'err' });
+  const bar = h('div', { class: 'bar', style: { display: 'none' } }, h('div', { style: { width: '0%' } }));
+  const go = h('button', { class: 'btn primary' }, 'Upload & analyse');
+
+  go.addEventListener('click', async () => {
+    err.textContent = '';
+    if (!f.home || !f.away) return (err.textContent = 'Enter both team names.');
+    if (!f.file) return (err.textContent = 'Choose the match video file.');
+    go.disabled = true;
+    try {
+      const match = await api('/matches', {
+        method: 'POST',
+        body: { title: f.title || `${f.home} v ${f.away}`, sport: f.sport, home_team: f.home, away_team: f.away, played_on: f.date || null },
+      });
+      bar.style.display = '';
+      await putVideo(match.id, f.file, (p) => { bar.firstChild.style.width = `${Math.round(p * 100)}%`; });
+      dlg.close();
+      await refreshMatches();
+      await openMatch(match.id);
+    } catch (e) { err.textContent = e.message; go.disabled = false; }
+  });
+
+  dlg.append(
+    h('h3', null, 'New match'),
+    field('Sport', select(sports.map((s) => [s.sport, s.name]), f.sport, (v) => { f.sport = v; })),
+    h('div', { class: 'row' },
+      field('Home team', h('input', { type: 'text', oninput: (e) => { f.home = e.target.value.trim(); } })),
+      field('Away team', h('input', { type: 'text', oninput: (e) => { f.away = e.target.value.trim(); } }))),
+    h('div', { class: 'row' },
+      field('Title (optional)', h('input', { type: 'text', oninput: (e) => { f.title = e.target.value.trim(); } })),
+      field('Date (optional)', h('input', { type: 'date', oninput: (e) => { f.date = e.target.value; } }))),
+    field('Match video (mp4 downloaded from Veo)', h('input', { type: 'file', accept: 'video/*,.mp4,.mov,.m4v,.mkv', onchange: (e) => { f.file = e.target.files[0] || null; } })),
+    bar, err,
+    h('div', { class: 'actions' }, h('button', { class: 'btn', onclick: () => dlg.close() }, 'Cancel'), go));
+  dlg.addEventListener('close', () => dlg.remove());
+  document.body.append(dlg);
+  dlg.showModal();
+}
+
+// ---------- boot ----------
+document.addEventListener('DOMContentLoaded', async () => {
+  $('#new-match').addEventListener('click', openUpload);
+  try {
+    await refreshMatches();
+  } catch (e) {
+    return $('#main').replaceChildren(h('div', { class: 'empty' }, h('h2', null, 'Cannot reach the API'), h('p', null, e.message)));
+  }
+  const id = Number(location.hash.slice(1));
+  if (id) openMatch(id); else renderEmpty();
+});
