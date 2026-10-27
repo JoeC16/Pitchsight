@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -74,3 +74,44 @@ class EventOut(BaseModel):
     confidence: float | None
     origin: str
     reviewed: bool
+
+
+# ---------- auth ----------
+Email = Annotated[str, Field(min_length=3, max_length=254, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")]
+Password = Annotated[str, Field(min_length=8, max_length=200)]
+
+
+class Register(BaseModel):
+    club_name: str = Field(min_length=1, max_length=120)
+    email: Email
+    password: Password
+
+
+class Login(BaseModel):
+    email: str
+    password: str
+
+
+class NewUser(BaseModel):
+    email: Email
+    password: Password
+    role: Literal["admin", "member"] = "member"
+
+
+class UserOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    email: str
+    role: str
+
+
+class ClubOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+
+
+class Me(UserOut):
+    club: ClubOut

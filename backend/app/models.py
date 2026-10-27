@@ -10,10 +10,49 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+class Club(Base):
+    """A customer. Every match belongs to exactly one club and is only visible to its users."""
+
+    __tablename__ = "clubs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(120))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    users: Mapped[list["User"]] = relationship(back_populates="club")
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    club_id: Mapped[int] = mapped_column(ForeignKey("clubs.id", ondelete="CASCADE"), index=True)
+    email: Mapped[str] = mapped_column(String(254), unique=True)  # stored lower-cased
+    password_hash: Mapped[str] = mapped_column(String(200))
+    role: Mapped[str] = mapped_column(String(20), default="member")  # admin | member
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    club: Mapped[Club] = relationship(back_populates="users")
+
+
+class AuthSession(Base):
+    """A login. Only a hash of the token is stored, so a leaked database can't be replayed."""
+
+    __tablename__ = "auth_sessions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+    user: Mapped[User] = relationship()
+
+
 class Match(Base):
     __tablename__ = "matches"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    club_id: Mapped[int] = mapped_column(ForeignKey("clubs.id", ondelete="CASCADE"), index=True)
     title: Mapped[str] = mapped_column(String(200))
     sport: Mapped[str] = mapped_column(String(40))
     home_team: Mapped[str] = mapped_column(String(120))

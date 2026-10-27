@@ -21,3 +21,9 @@ CLIP_POST_S = float(os.environ.get("PITCHSIGHT_CLIP_POST_S", "3"))
 
 # Which detector turns video into events. "stub" generates synthetic demo events.
 DETECTOR = os.environ.get("PITCHSIGHT_DETECTOR", "stub")
+
+# Auth. Signup creates a new, empty club, so leaving it open doesn't expose other clubs' data.
+ALLOW_SIGNUP = os.environ.get("PITCHSIGHT_ALLOW_SIGNUP", "true").lower() == "true"
+SESSION_DAYS = float(os.environ.get("PITCHSIGHT_SESSION_DAYS", "30"))
+# Set true when served over HTTPS so the session cookie is never sent in clear text.
+SECURE_COOKIES = os.environ.get("PITCHSIGHT_SECURE_COOKIES", "false").lower() == "true"

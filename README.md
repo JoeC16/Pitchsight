@@ -43,6 +43,22 @@ code changes needed. Copy `soccer.yaml` to start a new sport.
 | `PITCHSIGHT_MAX_UPLOAD_GB` | `20` | upload size cap |
 | `PITCHSIGHT_CLIP_PRE_S` / `_POST_S` | `5` / `3` | clip padding in seconds |
 | `PITCHSIGHT_DB_URL` | sqlite in data dir | any SQLAlchemy URL |
+| `PITCHSIGHT_ALLOW_SIGNUP` | `true` | allow `POST /api/auth/register` (creates a new club + admin) |
+| `PITCHSIGHT_SESSION_DAYS` | `30` | login session lifetime |
+| `PITCHSIGHT_SECURE_COOKIES` | `false` | set `true` behind HTTPS |
+
+## Accounts
+
+Each club's users see only that club's matches. The first person signs up in the UI ("Create an
+account"), which creates the club and makes them its admin; admins add coaches from the club
+menu in the top bar. From the command line (e.g. with sign-up closed):
+
+```bash
+python -m app.cli create-user coach@club.ie --club "St Mary's GAC"   # prompts for password
+```
+
+The database schema is managed by Alembic and upgraded automatically on startup. After changing
+`models.py`, run `alembic revision --autogenerate -m "..."` in `backend/` and review the result.
 
 ## Docs
 

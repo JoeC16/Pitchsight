@@ -9,43 +9,47 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from .. import analytics, config, queries, schemas, taxonomy
+from ..auth import CurrentUser
 from ..db import get_db
-from ..models import Event, Match
+from ..models import Event, Match, User
 from ..pipeline.runner import process_match
 
 router = APIRouter()
 
 
-def _get_match(db: Session, match_id: int) -> Match:
+def _get_match(db: Session, match_id: int, user: User) -> Match:
+    """The match, if it belongs to the user's club. Other clubs' matches are a plain 404."""
     match = db.get(Match, match_id)
-    if match is None:
+    if match is None or match.club_id != user.club_id:
         raise HTTPException(404, "Match not found")
     return match
 
 
 @router.post("", response_model=schemas.MatchOut, status_code=201)
-def create_match(body: schemas.MatchCreate, db: Session = Depends(get_db)):
+def create_match(body: schemas.MatchCreate, user: CurrentUser, db: Session = Depends(get_db)):
     if body.sport not in taxonomy.load_packs():
         raise HTTPException(422, f"Unknown sport '{body.sport}'")
-    match = Match(**body.model_dump())
+    match = Match(**body.model_dump(), club_id=user.club_id)
     db.add(match)
     db.commit()
     return match
 
 
 @router.get("", response_model=list[schemas.MatchOut])
-def list_matches(db: Session = Depends(get_db)):
-    return db.scalars(select(Match).order_by(Match.created_at.desc())).all()
+def list_matches(user: CurrentUser, db: Session = Depends(get_db)):
+    return db.scalars(
+        select(Match).where(Match.club_id == user.club_id).order_by(Match.created_at.desc())
+    ).all()
 
 
 @router.get("/{match_id}", response_model=schemas.MatchOut)
-def get_match(match_id: int, db: Session = Depends(get_db)):
-    return _get_match(db, match_id)
+def get_match(match_id: int, user: CurrentUser, db: Session = Depends(get_db)):
+    return _get_match(db, match_id, user)
 
 
 @router.delete("/{match_id}", status_code=204)
-def delete_match(match_id: int, db: Session = Depends(get_db)):
-    match = _get_match(db, match_id)
+def delete_match(match_id: int, user: CurrentUser, db: Session = Depends(get_db)):
+    match = _get_match(db, match_id, user)
     if match.video_path:
         Path(match.video_path).unlink(missing_ok=True)
     for clip in config.CLIP_DIR.glob(f"m{match.id}_*.mp4"):
@@ -56,11 +60,12 @@ def delete_match(match_id: int, db: Session = Depends(get_db)):
 
 @router.put("/{match_id}/video", response_model=schemas.MatchOut)
 async def upload_video(
-    match_id: int, request: Request, background: BackgroundTasks, db: Session = Depends(get_db)
+    match_id: int, request: Request, background: BackgroundTasks, user: CurrentUser,
+    db: Session = Depends(get_db),
 ):
     """Upload the match video as a raw request body (not multipart), streamed straight to
     disk so multi-GB Veo files never sit in memory. Send the original name in X-Filename."""
-    match = _get_match(db, match_id)
+    match = _get_match(db, match_id, user)
     if match.status not in ("created", "failed"):
         raise HTTPException(409, f"Match is '{match.status}'; video can only be uploaded once")
 
@@ -96,8 +101,8 @@ async def upload_video(
 
 
 @router.get("/{match_id}/video")
-def get_video(match_id: int, db: Session = Depends(get_db)):
-    match = _get_match(db, match_id)
+def get_video(match_id: int, user: CurrentUser, db: Session = Depends(get_db)):
+    match = _get_match(db, match_id, user)
     if not match.video_path or not Path(match.video_path).exists():
         raise HTTPException(404, "No video")
     media_type = mimetypes.guess_type(match.video_path)[0] or "video/mp4"
@@ -105,9 +110,9 @@ def get_video(match_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{match_id}/reprocess", response_model=schemas.MatchOut)
-def reprocess(match_id: int, background: BackgroundTasks, db: Session = Depends(get_db)):
+def reprocess(match_id: int, background: BackgroundTasks, user: CurrentUser, db: Session = Depends(get_db)):
     """Re-run detection. Keeps manual and human-reviewed events; replaces the rest."""
-    match = _get_match(db, match_id)
+    match = _get_match(db, match_id, user)
     if not match.video_path:
         raise HTTPException(409, "Upload a video first")
     if match.status == "processing":
@@ -120,8 +125,8 @@ def reprocess(match_id: int, background: BackgroundTasks, db: Session = Depends(
 
 
 @router.get("/{match_id}/events", response_model=list[schemas.EventOut])
-def list_events(match_id: int, request: Request, db: Session = Depends(get_db)):
-    _get_match(db, match_id)
+def list_events(match_id: int, request: Request, user: CurrentUser, db: Session = Depends(get_db)):
+    _get_match(db, match_id, user)
     try:
         stmt = queries.filter_events(match_id, request.query_params)
     except ValueError as exc:
@@ -130,9 +135,9 @@ def list_events(match_id: int, request: Request, db: Session = Depends(get_db)):
 
 
 @router.post("/{match_id}/events", response_model=schemas.EventOut, status_code=201)
-def create_event(match_id: int, body: schemas.EventIn, db: Session = Depends(get_db)):
+def create_event(match_id: int, body: schemas.EventIn, user: CurrentUser, db: Session = Depends(get_db)):
     """Manual tag. Stored as origin='manual', reviewed."""
-    match = _get_match(db, match_id)
+    match = _get_match(db, match_id, user)
     try:
         taxonomy.validate_event(match.sport, body.type, body.team, body.attributes)
     except taxonomy.TaxonomyError as exc:
@@ -144,5 +149,5 @@ def create_event(match_id: int, body: schemas.EventIn, db: Session = Depends(get
 
 
 @router.get("/{match_id}/summary")
-def summary(match_id: int, db: Session = Depends(get_db)):
-    return analytics.match_summary(db, _get_match(db, match_id))
+def summary(match_id: int, user: CurrentUser, db: Session = Depends(get_db)):
+    return analytics.match_summary(db, _get_match(db, match_id, user))

@@ -36,6 +36,10 @@ async function api(path, { method = 'GET', body } = {}) {
     headers: body !== undefined ? { 'Content-Type': 'application/json' } : {},
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
+  if (res.status === 401 && !path.startsWith('/auth/')) {
+    showAuth();
+    throw new Error('Not signed in');
+  }
   if (!res.ok) {
     let msg = res.statusText;
     try {
@@ -50,7 +54,7 @@ async function api(path, { method = 'GET', body } = {}) {
 // ---------- state ----------
 const freshFilters = () => ({ types: new Set(), team: '', period: '', minConf: 0, attrs: {} });
 const S = {
-  packs: {}, matches: [], match: null, pack: null,
+  me: null, packs: {}, matches: [], match: null, pack: null,
   events: [], shown: [], shownIds: new Set(), summary: null,
   filters: freshFilters(), reel: null, poll: null,
 };
@@ -472,6 +476,7 @@ function putVideo(id, file, onProgress) {
     x.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(e.loaded / e.total); };
     x.onload = () => {
       if (x.status < 300) return resolve(JSON.parse(x.responseText));
+      if (x.status === 401) { showAuth(); return reject(new Error('Not signed in')); }
       let msg = `Upload failed (${x.status})`;
       try { const j = JSON.parse(x.responseText); if (typeof j.detail === 'string') msg = j.detail; } catch (_) { /* keep default */ }
       reject(new Error(msg));
@@ -524,14 +529,100 @@ async function openUpload() {
   dlg.showModal();
 }
 
+// ---------- auth ----------
+function showAuth(mode = 'login') {
+  clearInterval(S.poll);
+  S.me = null; S.match = null; S.matches = [];
+  document.body.classList.add('signed-out');
+  $('#user-box').replaceChildren();
+  const f = { club: '', email: '', password: '' };
+  const err = h('div', { class: 'err' });
+  const isLogin = mode === 'login';
+  const submit = async (ev) => {
+    ev.preventDefault();
+    err.textContent = '';
+    try {
+      S.me = isLogin
+        ? await api('/auth/login', { method: 'POST', body: { email: f.email, password: f.password } })
+        : await api('/auth/register', { method: 'POST', body: { club_name: f.club, email: f.email, password: f.password } });
+      await boot();
+    } catch (e) { err.textContent = e.message; }
+  };
+  $('#main').replaceChildren(
+    h('form', { class: 'auth', onsubmit: submit },
+      h('h2', null, isLogin ? 'Sign in' : 'Create your club'),
+      isLogin ? null : field('Club name', h('input', { type: 'text', name: 'club', required: true, oninput: (e) => { f.club = e.target.value; } })),
+      field('Email', h('input', { type: 'email', name: 'email', autocomplete: 'username', required: true, oninput: (e) => { f.email = e.target.value; } })),
+      field('Password' + (isLogin ? '' : ' (8+ characters)'), h('input', { type: 'password', name: 'password', autocomplete: isLogin ? 'current-password' : 'new-password', required: true, minlength: isLogin ? null : 8, oninput: (e) => { f.password = e.target.value; } })),
+      err,
+      h('button', { class: 'btn primary', type: 'submit' }, isLogin ? 'Sign in' : 'Create club'),
+      h('p', { class: 'muted' }, isLogin ? 'New club? ' : 'Already have an account? ',
+        h('a', { href: '#', onclick: (e) => { e.preventDefault(); showAuth(isLogin ? 'register' : 'login'); } }, isLogin ? 'Create an account' : 'Sign in'))),
+  );
+}
+
+function renderUserBox() {
+  $('#user-box').replaceChildren(
+    h('button', { class: 'btn small', title: 'Club members', onclick: openClub }, `${S.me.club.name}`),
+    h('span', { class: 'muted' }, S.me.email),
+    h('button', { class: 'btn small', onclick: logout }, 'Sign out'));
+}
+
+async function logout() {
+  await api('/auth/logout', { method: 'POST' }).catch(() => {});
+  location.hash = '';
+  showAuth();
+}
+
+async function openClub() {
+  const dlg = h('dialog');
+  const list = h('div', { class: 'members' });
+  const err = h('div', { class: 'err' });
+  const f = { email: '', password: '', role: 'member' };
+  async function draw() {
+    const users = await api('/auth/users');
+    list.replaceChildren(...users.map((u) => h('div', { class: 'member' }, h('span', null, u.email), h('span', { class: 'tag' }, u.role))));
+  }
+  const form = S.me.role === 'admin'
+    ? h('form', { onsubmit: async (e) => {
+      e.preventDefault(); err.textContent = '';
+      try {
+        await api('/auth/users', { method: 'POST', body: f });
+        e.target.reset(); f.email = f.password = ''; await draw();
+      } catch (x) { err.textContent = x.message; }
+    } },
+    h('div', { class: 'ftitle' }, 'Add a coach'),
+    h('div', { class: 'row' },
+      field('Email', h('input', { type: 'email', required: true, oninput: (e) => { f.email = e.target.value; } })),
+      field('Temporary password', h('input', { type: 'text', required: true, minlength: 8, oninput: (e) => { f.password = e.target.value; } }))),
+    field('Role', select([['member', 'Member'], ['admin', 'Admin (can add users)']], f.role, (v) => { f.role = v; })),
+    err,
+    h('div', { class: 'actions' }, h('button', { class: 'btn primary', type: 'submit' }, 'Add')))
+    : h('p', { class: 'muted' }, 'Ask a club admin to add coaches.');
+  dlg.append(h('h3', null, S.me.club.name), h('div', { class: 'ftitle' }, 'Members'), list, form,
+    h('div', { class: 'actions' }, h('button', { class: 'btn', onclick: () => dlg.close() }, 'Close')));
+  dlg.addEventListener('close', () => dlg.remove());
+  document.body.append(dlg);
+  await draw();
+  dlg.showModal();
+}
+
 // ---------- boot ----------
-document.addEventListener('DOMContentLoaded', async () => {
-  $('#new-match').addEventListener('click', openUpload);
+async function boot() {
   try {
-    await refreshMatches();
+    S.me = await api('/auth/me');
   } catch (e) {
+    if (/Not signed in/.test(e.message)) return showAuth();
     return $('#main').replaceChildren(h('div', { class: 'empty' }, h('h2', null, 'Cannot reach the API'), h('p', null, e.message)));
   }
+  document.body.classList.remove('signed-out');
+  renderUserBox();
+  await refreshMatches();
   const id = Number(location.hash.slice(1));
   if (id) openMatch(id); else renderEmpty();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  $('#new-match').addEventListener('click', openUpload);
+  boot();
 });

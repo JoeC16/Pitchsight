@@ -49,4 +49,6 @@ def test_pre_alembic_database_is_adopted_and_keeps_data(tmp_path):
     run(tmp_path, "from app.migrate import upgrade_db; upgrade_db()")
     with eng.connect() as conn:
         assert conn.execute(text("SELECT title FROM matches")).scalar() == "Old"
+        # Pre-auth matches are moved into a "Default club".
+        assert conn.execute(text("SELECT c.name FROM matches m JOIN clubs c ON c.id = m.club_id")).scalar() == "Default club"
         assert conn.execute(text("SELECT count(*) FROM alembic_version")).scalar() == 1

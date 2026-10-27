@@ -32,7 +32,10 @@ see `backend/app/config.py` (`PITCHSIGHT_DATA_DIR`, `PITCHSIGHT_DETECTOR`, `PITC
 sport_packs/*.yaml        taxonomy per sport: event types + attributes + scoring. SOURCE OF TRUTH.
 backend/app/
   main.py                 app, lifespan (create tables, fail stuck jobs), static frontend mount
-  models.py               Match, Event (attributes is a JSON dict)
+  models.py               Club, User, AuthSession, Match, Event (attributes is a JSON dict)
+  auth.py                 password hashing, sessions, current_user dependency
+  migrate.py              runs Alembic on startup (backend/migrations/)
+  cli.py                  python -m app.cli create-user
   taxonomy.py             loads packs, validate_event()
   queries.py              ?type=&team=&period=&min_conf=&attr.<id>= filtering
   analytics.py            generic summary: counts, breakdowns, score (driven by pack `scoring`)
@@ -51,6 +54,11 @@ docs/ROADMAP.md           phased plan with exit criteria and risks
 ```
 
 ## Design decisions to preserve
+
+- **Every query is club-scoped.** Resolve matches with `_get_match(db, id, user)` and events with
+  `_get_event(db, id, user)`; never `db.get(Match, id)` in a route. Other clubs' ids are a 404.
+- **Schema changes need a migration.** `alembic revision --autogenerate`, then review it;
+  `tests/test_migrations.py` fails if models and migrations drift apart.
 
 - **Sport packs drive everything.** Adding a classification = editing YAML. The API validates
   against it and the UI builds its filter chips from it. Don't hard-code event types or values
@@ -71,10 +79,10 @@ docs/ROADMAP.md           phased plan with exit criteria and risks
 
 ## Not built yet (don't assume these exist)
 
-Real detection (everything in `pipeline/real.py`), auth and multi-tenancy (clubs/teams/users),
+Real detection (everything in `pipeline/real.py`),
 video proxy transcoding for browser playback, reel export (concatenated mp4), a job queue and GPU
 worker (processing runs in-process via FastAPI BackgroundTasks), Postgres and object storage
-(sqlite + local disk), migrations (tables are created with `create_all`), Veo import automation
+(sqlite + local disk), Veo import automation
 (users download the file from Veo and upload it by hand).
 
 ## Suggested next tasks, in order

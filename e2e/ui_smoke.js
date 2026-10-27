@@ -29,9 +29,21 @@ function check(cond, msg) {
   const snap = async (name) => page.screenshot({ path: path.join(shots, `${String(++step).padStart(2, '0')}-${name}.png`) });
 
   try {
+    // --- register a new club (each run gets its own, so runs don't see each other's matches)
+    const email = `coach${Date.now()}@example.com`, password = 'smoke-test-pw';
     await page.goto(base);
-    await page.waitForSelector('.empty h2, .match-item');
+    await page.waitForSelector('form.auth');
+    check(await page.locator('.sidebar').isHidden(), 'signed out: login form shown, sidebar hidden');
+    await snap('login');
+    await page.locator('form.auth a', { hasText: 'Create an account' }).click();
+    await page.fill('form.auth input[name=club]', 'St Mary GAC');
+    await page.fill('form.auth input[name=email]', email);
+    await page.fill('form.auth input[name=password]', password);
+    await page.locator('form.auth button[type=submit]').click();
+    await page.waitForSelector('.empty h2');
+    check(/St Mary GAC/.test(await page.locator('#user-box').innerText()), 'registered and signed in; club shown in top bar');
     await snap('home');
+    errors.length = 0; // the signed-out probe of /api/auth/me logs an expected 401
 
     // --- create match + upload
     await page.click('#new-match');
@@ -124,6 +136,7 @@ function check(cond, msg) {
     await ed.locator('button', { hasText: 'Save' }).click();
     await page.waitForSelector('dialog[open]', { state: 'detached' });
     const edited = page.locator('#' + rowId);
+    await page.waitForFunction((id) => /reviewed/.test(document.getElementById(id).innerText), rowId);
     check(/reviewed/.test(await edited.innerText()) && /Ballyboden/.test(await edited.innerText()), 'edit saved: team changed, marked reviewed');
 
     // --- manual tag
@@ -134,7 +147,8 @@ function check(cond, msg) {
     await tag.locator('select').nth(3).selectOption('over_carry');
     await tag.locator('button', { hasText: 'Save' }).click();
     await page.waitForSelector('dialog[open]', { state: 'detached' });
-    check(await page.locator('.ev').count() === total + 1, 'manual tag added to list');
+    await page.waitForFunction((n) => document.querySelectorAll('.ev').length === n, total + 1);
+    check(true, 'manual tag added to list');
     const freeRows = await page.locator('.ev', { hasText: 'over carry' }).allInnerTexts();
     check(freeRows.some((r) => r.startsWith('0:42') && /reviewed/.test(r)), 'manual tag at 0:42, reviewed');
     await snap('tagged');
@@ -158,6 +172,28 @@ function check(cond, msg) {
     await dl.saveAs(out);
     const size = fs.statSync(out).size;
     check(size > 10000 && dl.suggestedFilename().endsWith('.mp4'), `clip downloaded: ${dl.suggestedFilename()} (${size} bytes)`);
+
+    // --- club dialog: admin adds a coach
+    await page.locator('#user-box button', { hasText: 'St Mary GAC' }).click();
+    const club = page.locator('dialog[open]');
+    await club.locator('input[type=email]').fill(`assistant${Date.now()}@example.com`);
+    await club.locator('input[type=text]').fill('temp-password');
+    await club.locator('button[type=submit]').click();
+    await page.waitForFunction(() => document.querySelectorAll('dialog[open] .member').length === 2);
+    check(true, 'admin added a coach to the club');
+    await club.locator('button', { hasText: 'Close' }).click();
+
+    // --- sign out, then back in: the match is still there
+    await page.locator('#user-box button', { hasText: 'Sign out' }).click();
+    await page.waitForSelector('form.auth');
+    const blocked = await page.evaluate(async () => (await fetch('/api/matches')).status);
+    check(blocked === 401, 'signed out: API refuses requests (401)');
+    errors.splice(errors.findIndex((e) => /status of 401/.test(e)), 1);
+    await page.fill('form.auth input[name=email]', email);
+    await page.fill('form.auth input[name=password]', password);
+    await page.locator('form.auth button[type=submit]').click();
+    await page.waitForSelector('.match-item');
+    check(await page.locator('.match-item', { hasText: 'UI smoke test' }).count() === 1, 'signed back in: match still listed');
 
     check(errors.length === 0, 'no JS errors in console: ' + JSON.stringify(errors));
     console.log('\nUI SMOKE TEST PASSED');

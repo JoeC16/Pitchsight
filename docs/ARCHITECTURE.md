@@ -34,17 +34,27 @@ barely exists publicly, so a labelled dataset is part of the work.
 
 ## Data model
 
+- `Club`: a customer. `User` belongs to one club (`admin` or `member`). `AuthSession` stores the
+  SHA-256 of a random login token (HttpOnly cookie `ps_session`, or `Authorization: Bearer`).
+- Every `Match` belongs to a club. All match/event routes resolve the match through the caller's
+  club; another club's ids return 404 (not 403) so they can't be probed.
+- Schema changes go through Alembic (`backend/migrations/`), run on startup.
+
 - `Match`: title, sport, teams, status (`created -> uploaded -> processing -> ready | failed`),
   progress, duration/fps, video path, which detector produced its events.
 - `Event`: match, type, team, period, `t_start`/`t_end` (seconds), `attributes` (JSON, validated
   against the pack), `confidence` (null for manual), `origin` (`stub|ai|manual`), `reviewed`.
 - Sport pack (YAML, not in the db): event types, their attributes and allowed values, scoring rules.
 
-## API (all under `/api`)
+## API (all under `/api`; everything except `/sports` and `/auth/{register,login}` needs login)
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/sports`, `/sports/{sport}` | list packs; full taxonomy for the UI |
+| POST | `/auth/register` | create club + admin user, sign in (if `PITCHSIGHT_ALLOW_SIGNUP`) |
+| POST | `/auth/login`, `/auth/logout` | start / end a session |
+| GET | `/auth/me` | current user + club |
+| GET/POST | `/auth/users` | list club members / admin adds a member |
+| GET | `/sports`, `/sports/{sport}` | list packs; full taxonomy for the UI (no login needed) |
 | POST/GET | `/matches` | create (metadata only) / list |
 | GET/DELETE | `/matches/{id}` | fetch / delete incl. files |
 | PUT | `/matches/{id}/video` | raw body upload, `X-Filename` header; triggers processing |
@@ -62,5 +72,5 @@ Event filters: `type=a,b` `team=home|away` `period=1|2` `min_conf=0.6` `attr.<id
 
 - Processing is in-process today. Move `process_match` behind a queue and run it on a GPU worker;
   the function is already self-contained.
-- Swap sqlite for Postgres (set `PITCHSIGHT_DB_URL`, add Alembic) and local disk for object storage.
+- Swap sqlite for Postgres (set `PITCHSIGHT_DB_URL`) and local disk for object storage.
 - GPU time per match is the main unit cost; price plans accordingly.
