@@ -77,7 +77,7 @@ function renderSidebar() {
         h('div', { class: 't' }, m.title),
         h('div', { class: 's' }, h('span', { class: 'dot ' + m.status }), `${m.home_team} v ${m.away_team}`)),
     ),
-    S.matches.length ? null : h('div', { class: 's', style: { color: 'var(--muted)', padding: '4px' } }, 'No matches yet'),
+    ...(S.matches.length ? [] : [h('div', { class: 's', style: { color: 'var(--muted)', padding: '4px' } }, 'No matches yet')]),
   );
 }
 
@@ -184,7 +184,7 @@ function renderHead() {
       h('h1', null, m.title),
       h('div', { class: 'sub' }, [m.played_on, S.pack.name, `${S.summary.total_events} events, ${S.summary.reviewed_events} reviewed`].filter(Boolean).join(' · '))),
     sc ? h('div', { class: 'scoreline' },
-      h('span', { class: 'home-c' }, sc.home.display), h('small', null, `${m.home_team} v ${m.away_team}`), h('span', { class: 'away-c' }, sc.away.display)) : null,
+      h('span', { class: 'home-c' }, sc.home.display), h('small', null, `${m.home_team} v ${m.away_team}`), h('span', { class: 'away-c' }, sc.away.display)) : '',
   );
 }
 

@@ -5,8 +5,7 @@ the match to the moments that matter (turnovers, kickouts, shots, scores) and re
 
 > **Status: working scaffold.** Upload, storage, taxonomy, filtering, clips, review/tagging and
 > the UI are built. Detection is **simulated** (a stub emits synthetic events) until the real
-> computer-vision pipeline is built. See `docs/ROADMAP.md`. The code was written without access
-> to a package index, so the test suite still needs its first run (see `CLAUDE.md`).
+> computer-vision pipeline is built. See `docs/ROADMAP.md`.
 
 ## Quick start
 

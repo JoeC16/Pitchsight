@@ -33,6 +33,7 @@ button, select, input { font: inherit; color: inherit; }
 
 .btn { background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 7px 12px; cursor: pointer; }
 .btn:hover { border-color: var(--muted); }
+a.btn { color: inherit; text-decoration: none; display: inline-block; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #04140c; font-weight: 600; }
 .btn.danger { color: var(--bad); }
 .btn.small { padding: 3px 8px; font-size: 12px; }

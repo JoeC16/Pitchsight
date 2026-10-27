@@ -4,14 +4,14 @@ Working name for a match-analysis product sold to GAA and soccer clubs. A club d
 game from Veo, uploads it here, and the app finds the key moments (turnovers, shots,
 kickouts...), lets coaches filter to specific clips, and shows patterns of play.
 
-## First thing to do
+## Status
 
-**The backend test suite has never been run.** The scaffold was written in a sandbox with no
-access to PyPI, so only these were verified: Python syntax, the JS syntax, the sport packs
-loading, the stub detector's output validating against the taxonomy, ffprobe parsing, and the
-exact ffmpeg clip command. The FastAPI/SQLAlchemy app, the API tests and the UI have **not**
-been executed. Run `pytest` first and fix whatever breaks, then open the UI in a browser and
-click through: create match, upload, filter, play reel, edit, tag, clip download.
+See `PROGRESS.md` for what is done, verified and blocked. The test suite runs and passes, and
+`e2e/ui_smoke.js` drives the whole UI in headless Chromium against a running server:
+
+```bash
+node e2e/ui_smoke.js path/to/video.mp4 http://localhost:8000 /tmp/shots
+```
 
 ## Run it
 
@@ -19,7 +19,7 @@ click through: create match, upload, filter, play reel, edit, tag, clip download
 cd backend
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt          # needs ffmpeg + ffprobe on PATH
-pytest                                    # ~15 tests
+pytest
 uvicorn app.main:app --reload             # UI + API at http://localhost:8000
 ```
 
