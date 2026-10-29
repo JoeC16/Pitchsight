@@ -20,24 +20,28 @@ README and the CSV template is committed: video is large and shows identifiable 
 - Kick-off time in the video for each half (e.g. "1st half starts 00:02:10, 2nd 00:41:30").
 - Pitch size if known (GAA pitches vary: 130-145 m x 80-90 m).
 
-## 3. Hand-tagged ground truth (CSV)
+## 3. Ground truth: optional
 
-Use `ground_truth_template.csv` (columns are generated from `sport_packs/gaa_football.yaml`).
-Delete the example rows. Tag **every shot, kickout and turnover** in at least the held-out match;
-one half of each other match is enough to start.
+You don't need to tag anything in advance. Once detection runs on a match:
 
-- `t_start` / `t_end`: **seconds into the video file**, not the match clock (e.g. 62.0 = 1:02 in the file).
-  `t_start` is the moment it happens (kick struck, ball won). `t_end` can be a rough guess.
-- `team`: follow `team_means` in the sport pack. **shot** = team shooting, **turnover** = team that
-  **won** the ball, **kickout** = team kicking it out, **free** = team that **conceded** it.
-- Attribute columns: use the exact values from the sport pack (e.g. `point`, `two_pointer`, `wide`),
-  blank if unsure. Only `video_file`, `type`, `team`, `t_start` are required.
-- The evaluation will count a detection as correct when the type and team match and `t_start` is
-  within a tolerance (default 3 s; adjustable).
+1. Watch a stretch (ideally a whole half) **before** opening the review queue, so the detections
+   don't steer you.
+2. In the review queue confirm (Enter), fix (E) or delete (D D) every event in that stretch, and
+   **+ Tag** anything it missed.
+3. Under **Checked stretches**, mark that stretch as checked. The app refuses while any event in it
+   is unreviewed.
+
+Precision and recall then appear in the app (or `python -m app.evaluate --match ID`).
+
+If anyone does tag matches separately, use `ground_truth_template.csv` (columns from the sport
+pack): `t_start` in **seconds into the video file**, `team` per the pack's `team_means` (turnover =
+team that **won** the ball, free = team that **conceded**), and attribute values exactly as in the
+pack. Then run `python -m app.evaluate --match ID --truth-csv file.csv`.
 
 ## 4. Getting the files here
 
 The dev environment is a temporary cloud container, so files can't be committed to git. Put them
-somewhere downloadable (Google Drive/Dropbox share link, or an S3/GCS signed URL) and send the
-links; I'll download them into this folder. If the container's network policy blocks that host,
-I'll say so and point you at the setting.
+somewhere downloadable (Dropbox or Google Drive share link, or an S3/GCS signed URL) and send the
+links. The environment's network policy must allow the host: Google Drive needs
+`drive.google.com` and `drive.usercontent.google.com` under Network access in the environment
+settings (it was blocked on the first try).

@@ -78,3 +78,13 @@ pitch:
     - { value: own_third, third: [0, 0.3333] }
   # `side` attribute: the pitch width split into equal lanes, left to right as the attacking team sees it.
   sides: [left, centre, right]
+
+# Parameters for rule-based detection from tracking data (backend/app/pipeline/rules.py).
+# Starting guesses: tune them against coach-verified matches (python -m app.evaluate).
+detection:
+  kickout:
+    from_end_m: [10, 25]        # ball placed this far from the end line (kickouts: 20m line)...
+    max_from_centre_m: 22       # ...and within this distance of the centre of the pitch width
+    length_m: { short: [0, 35], medium: [35, 55], long: [55, 999] }
+  shot:
+    max_distance_m: 55          # kicks from further out than this aren't treated as shots

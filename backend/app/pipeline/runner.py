@@ -15,6 +15,7 @@ from ..proxy import build_proxy, needs_proxy
 from ..db import SessionLocal
 from ..models import DetectionRun, Event, Match
 from . import get_detector
+from .interfaces import MatchContext
 from .probe import probe
 
 log = logging.getLogger(__name__)
@@ -52,7 +53,8 @@ def process_match(match_id: int) -> None:
         kept = db.scalars(select(Event).where(Event.match_id == match.id)).all()
 
         dropped, valid = 0, []
-        for draft in detector.detect(video, info, pack, progress):
+        context = MatchContext(sport=match.sport, pitch_setup=match.pitch_setup)
+        for draft in detector.detect(video, info, pack, progress, context):
             try:
                 taxonomy.validate_event(match.sport, draft.type, draft.team, draft.attributes)
             except taxonomy.TaxonomyError as exc:  # a detector must not be able to poison the DB

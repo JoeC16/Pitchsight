@@ -198,7 +198,7 @@ function renderHead() {
     h('div', null,
       h('h1', null, m.title),
       h('div', { class: 'sub' }, [m.played_on, S.pack.name, `${S.summary.total_events} events, ${S.summary.reviewed_events} reviewed`].filter(Boolean).join(' · '),
-        m.has_video && m.status === 'ready' ? h('button', { class: 'btn small pitchbtn', id: 'pitch-setup', onclick: openPitchSetup },
+        m.has_video && ['ready', 'failed'].includes(m.status) ? h('button', { class: 'btn small pitchbtn', id: 'pitch-setup', onclick: openPitchSetup },
           m.pitch_setup ? `Pitch set up ✓ (${m.pitch_setup.rms_error_m} m)` : 'Set up pitch') : '')),
     sc ? h('div', { class: 'scoreline' },
       h('span', { class: 'home-c' }, sc.home.display), h('small', null, `${m.home_team} v ${m.away_team}`), h('span', { class: 'away-c' }, sc.away.display)) : '',

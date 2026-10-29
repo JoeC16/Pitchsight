@@ -50,7 +50,11 @@ backend/app/
   pipeline/
     interfaces.py         Detector protocol, EventDraft, VideoInfo   <- the key seam
     stub.py               SYNTHETIC events for development (origin="stub")
-    real.py               skeleton for the real CV pipeline (not implemented)
+    real.py               real pipeline: tracking -> rules (detection/tracking model not built yet)
+    tracking.py           tracking data format (players + ball in pitch metres over time)
+    possession.py         possession timeline from tracking
+    rules.py              kickouts, shots, turnovers with confidence (thresholds in pack `detection:`)
+    teams.py              kit-colour team assignment
     runner.py             process_match(): probe -> detect -> validate -> store
     probe.py              ffprobe wrapper
 backend/tests/            pytest + TestClient; test_api.py covers the whole API
@@ -85,7 +89,7 @@ docs/ROADMAP.md           phased plan with exit criteria and risks
 
 ## Not built yet (don't assume these exist)
 
-Real detection (everything in `pipeline/real.py`), a job queue and GPU
+Frame decoding and player/ball detection + tracking (the model half of `pipeline/real.py`), a job queue and GPU
 worker (processing runs in-process via FastAPI BackgroundTasks), Postgres and object storage
 (sqlite + local disk), Veo import automation
 (users download the file from Veo and upload it by hand).

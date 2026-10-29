@@ -67,24 +67,42 @@ browser-friendly mp4 and an mpeg4 .mkv to exercise the proxy).
   The queue/worker is Phase D.
 - SQLite foreign keys aren't enforced; deletes cascade through the ORM instead.
 
-## Phase C: real detection — BLOCKED: no footage
+## Phase C: real detection — IN PROGRESS: everything that doesn't need footage is built
 
-`sample_matches/` did not exist (no footage supplied). As instructed, nothing in Phase C has been
-started and no detection results have been produced or simulated. `PITCHSIGHT_DETECTOR=real`
-still raises "not built yet", and stub results still carry the Demo data banner.
+**Still blocked on footage.** A Google Drive link was supplied, but this environment's network policy
+refused `drive.usercontent.google.com` (proxy 403). To fix: environment menu in the session's
+title bar, then Edit, then Network access, then allow `drive.google.com` and
+`drive.usercontent.google.com`, and start a new session. No result below comes from real video.
 
-**Needed to unblock** (details in `sample_matches/README.md`):
+**Ground truth is no longer required up front.** Agreed route: the coach verifies detections in the
+review queue, tags misses, and marks stretches as fully checked; those become ground truth.
+A hand-tagged CSV still works.
 
-1. 3 full GAA matches as downloaded from Veo, ideally the full panoramic (fixed, whole-pitch)
-   export. The planned single-homography calibration doesn't work on the panning/zooming
-   followed view. Which exports the Veo plan offers is unknown: needs confirming.
-2. Per-match notes: kit and goalkeeper colours, which end each team attacks first, half start times.
-3. Hand-tagged ground truth in `sample_matches/ground_truth_template.csv` format (generated from
-   the sport pack): every shot, kickout and turnover in at least the held-out match.
-4. Download links (files can't go in git; the container is temporary).
+| Piece | Status | Verified by |
+|---|---|---|
+| Detection runs saved unedited (`DetectionRun`) | built | tests; scoring after edits uses the original output |
+| Checked stretches (`VerifiedSpan`), refused while unreviewed events inside | built | API tests; browser test |
+| Evaluation: precision / recall / team / attributes per type; API, CLI (`python -m app.evaluate`, also `--truth-csv`), UI panel | built | exact counts from a scripted review; CLI = API; demo runs labelled |
+| Pitch calibration: pack-driven geometry, homography from clicked landmarks, overlay, zone/side from position | built | synthetic camera recovers unclicked points to <0.5 m with 1.5 px click noise; browser test calibrates a synthetic pitch video by clicking (0.55 m RMS, unclicked landmark 0.73 m off) |
+| Possession timeline from tracking | built | synthetic scenarios (flicker ignored, passes kept) |
+| Rule-based kickouts (length / target / retained-lost / clean-break), shots (zone / side / source; outcome only when clearly wide), turnovers (zone / kind) with confidence | built | 15 synthetic scenario tests incl. direction swap at half time, pass vs shot, kickout not double-counted as turnover |
+| Kit-colour team assignment (k-means in Lab, keepers/refs unassigned) | built, not wired | synthetic colours |
+| `pipeline/real.py` behind the Detector interface | built; runs from `<video>.tracking.json` | app-level test: upload, "set up the pitch" failure, calibrate, reprocess, events stored as `ai`, evaluable |
+| Frame decoding + player/ball detection + tracking (RF-DETR + ByteTrack) | **not built** | needs footage, and network access to install torch/weights |
+| Outcome classifier (goal/point/saved) | **not built** | needs labelled footage |
+| `docs/LICENCES.md` | done | from installed package metadata; flags GPL ffmpeg build |
 
-**Early licence note for the model choices** (to confirm and record in `docs/LICENCES.md` in
-Phase C): Ultralytics YOLO is AGPL-3.0 (commercial use needs their enterprise licence or opening
-the source); RF-DETR is Apache-2.0; ByteTrack is MIT. SoccerNet data needs an NDA and is research-only.
+**Fixed along the way:** reprocess re-added detections next to kept reviewed/manual events (duplicates).
+
+**Open questions for you**
+
+- GAA zones: the pack lists `inside_45` *and* `attacking_third`. On a 140 m pitch the 45 m line is
+  at 32% of the length, so nearly all of the attacking third is inside the 45. The rules check
+  `inside_45` first, so `attacking_third` almost never fires. Should zones be thirds only, or
+  `inside_45` plus a band such as "45 to 65 m"?
+- Shot outcome from a single camera: a ball in the air projects to the wrong ground position, so
+  point vs goal vs saved can't come from tracking alone. Plan: leave it for review, then train a
+  classifier on verified shots.
+- Frees aren't detected (need the referee's whistle; possibly audio later).
 
 ## Phase D: production readiness — not started (waiting on Phase C, per the phase order)

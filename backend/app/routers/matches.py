@@ -51,7 +51,7 @@ def get_match(match_id: int, user: CurrentUser, db: Session = Depends(get_db)):
 @router.delete("/{match_id}", status_code=204)
 def delete_match(match_id: int, user: CurrentUser, db: Session = Depends(get_db)):
     match = _get_match(db, match_id, user)
-    for path in (match.video_path, match.proxy_path):
+    for path in (match.video_path, match.proxy_path, match.video_path and f"{match.video_path}.tracking.json"):
         if path:
             Path(path).unlink(missing_ok=True)
     for directory in (config.CLIP_DIR, config.REEL_DIR):

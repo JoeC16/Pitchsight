@@ -37,9 +37,19 @@ class EventDraft:
 ProgressFn = Callable[[float], None]  # call with 0..1 as work completes
 
 
+@dataclass
+class MatchContext:
+    """What a detector may need to know about the match beyond the video itself."""
+
+    sport: str
+    pitch_setup: dict | None = None   # Match.pitch_setup: calibration + direction of play (pitch.py)
+    period_starts: list[float] | None = None  # video time each period kicks off, if known
+
+
 class Detector(Protocol):
     name: str  # stored as Event.origin, e.g. "stub" or "ai"
 
     def detect(
-        self, video_path: Path, info: VideoInfo, pack: dict, progress: ProgressFn
+        self, video_path: Path, info: VideoInfo, pack: dict, progress: ProgressFn,
+        context: MatchContext | None = None,
     ) -> list[EventDraft]: ...

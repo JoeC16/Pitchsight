@@ -7,7 +7,7 @@ via Event.origin == "stub".
 import random
 from pathlib import Path
 
-from .interfaces import EventDraft, ProgressFn, VideoInfo
+from .interfaces import EventDraft, MatchContext, ProgressFn, VideoInfo
 
 # Rough events-per-match by type id; unknown types get DEFAULT_COUNT.
 COUNTS = {"shot": 40, "turnover": 55, "kickout": 30, "free": 20, "set_piece": 35}
@@ -17,7 +17,8 @@ DEFAULT_COUNT = 15
 class StubDetector:
     name = "stub"
 
-    def detect(self, video_path: Path, info: VideoInfo, pack: dict, progress: ProgressFn) -> list[EventDraft]:
+    def detect(self, video_path: Path, info: VideoInfo, pack: dict, progress: ProgressFn,
+               context: MatchContext | None = None) -> list[EventDraft]:
         if info.duration_s < 30:
             return []
         rng = random.Random(int(info.duration_s * 1000))  # same video -> same demo events

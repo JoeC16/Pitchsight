@@ -29,7 +29,7 @@ Clips and reels always cut from the original.
 Downloads of simulated (stub) content carry `DEMO-simulated-event(s)` in the filename, because
 the UI's demo banner doesn't travel with the file.
 
-## Real detection pipeline (target; `pipeline/real.py`)
+## Real detection pipeline (`pipeline/real.py`; stages 2, 5, 6, 7 built, 1, 3, 4, 8 not)
 
 1. **Decode** frames at a reduced rate.
 2. **Calibrate** the pitch. Veo uses a fixed panoramic camera, so one homography per match maps
@@ -41,6 +41,13 @@ the UI's demo banner doesn't travel with the file.
 7. **Events**: rules over tracking (turnover = possession change, kickout = restart from the
    goal area, shot = ball launched at goal) plus an action model for what tracking can't see.
 8. **Classify** attributes (outcome, zone, side, method). Emit a confidence; low confidence goes to review.
+
+Built so far: calibration (`pitch.py`), team assignment (`pipeline/teams.py`, not wired yet),
+possession (`pipeline/possession.py`), and rules (`pipeline/rules.py`, GAA thresholds in the pack's
+`detection:` section). Until detection and tracking exist, `real.py` reads
+`<video>.tracking.json` (format in `pipeline/tracking.py`), and fails with a clear message if
+the pitch isn't set up or no tracking exists. Detectors receive a `MatchContext` (calibration,
+direction of play).
 
 Hard parts: ball outcome (point vs wide vs saved) from a distant view; GAA-specific training data
 barely exists publicly, so a labelled dataset is part of the work.
