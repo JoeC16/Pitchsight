@@ -5,13 +5,13 @@ from urllib.parse import unquote
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
-from .. import analytics, config, queries, reels, schemas, taxonomy
+from .. import analytics, config, evaluation, queries, reels, schemas, taxonomy
 from ..auth import CurrentUser
 from ..db import get_db
-from ..models import Event, Match, Reel, User
+from ..models import DetectionRun, Event, Match, Reel, User, VerifiedSpan
 from ..pipeline.runner import process_match
 
 router = APIRouter()
@@ -191,3 +191,62 @@ def create_reel(
 def list_reels(match_id: int, user: CurrentUser, db: Session = Depends(get_db)):
     _get_match(db, match_id, user)
     return db.scalars(select(Reel).where(Reel.match_id == match_id).order_by(Reel.created_at.desc())).all()
+
+
+# ---------- detection runs, verified spans, evaluation ----------
+
+@router.get("/{match_id}/runs", response_model=list[schemas.RunOut])
+def list_runs(match_id: int, user: CurrentUser, db: Session = Depends(get_db)):
+    """Each processing run's original output (kept even after coaches edit the events)."""
+    _get_match(db, match_id, user)
+    return db.scalars(select(DetectionRun).where(DetectionRun.match_id == match_id).order_by(DetectionRun.id.desc())).all()
+
+
+@router.get("/{match_id}/verified-spans", response_model=list[schemas.SpanOut])
+def list_spans(match_id: int, user: CurrentUser, db: Session = Depends(get_db)):
+    _get_match(db, match_id, user)
+    return db.scalars(select(VerifiedSpan).where(VerifiedSpan.match_id == match_id).order_by(VerifiedSpan.t_start)).all()
+
+
+@router.post("/{match_id}/verified-spans", response_model=schemas.SpanOut, status_code=201)
+def add_span(match_id: int, body: schemas.SpanIn, user: CurrentUser, db: Session = Depends(get_db)):
+    """Mark [t_start, t_end] as fully checked: every detection reviewed, every miss tagged.
+    Refused while unreviewed events remain inside, so a span is always complete."""
+    _get_match(db, match_id, user)
+    pending = db.scalar(select(func.count()).select_from(Event).where(
+        Event.match_id == match_id, Event.reviewed.is_(False),
+        Event.t_start >= body.t_start, Event.t_start <= body.t_end))
+    if pending:
+        raise HTTPException(409, f"{pending} unreviewed event(s) in that stretch - review them first")
+    span = VerifiedSpan(match_id=match_id, t_start=body.t_start, t_end=body.t_end, user_id=user.id)
+    db.add(span)
+    db.commit()
+    return span
+
+
+@router.delete("/{match_id}/verified-spans/{span_id}", status_code=204)
+def delete_span(match_id: int, span_id: int, user: CurrentUser, db: Session = Depends(get_db)):
+    _get_match(db, match_id, user)
+    span = db.get(VerifiedSpan, span_id)
+    if span is None or span.match_id != match_id:
+        raise HTTPException(404, "Span not found")
+    db.delete(span)
+    db.commit()
+
+
+@router.get("/{match_id}/evaluation")
+def evaluate_match(match_id: int, user: CurrentUser, run: int | None = None, tolerance: float = 3.0,
+                   db: Session = Depends(get_db)):
+    """Precision/recall of a detection run (default: latest) against the verified spans."""
+    match = _get_match(db, match_id, user)
+    q = select(DetectionRun).where(DetectionRun.match_id == match_id)
+    q = q.where(DetectionRun.id == run) if run else q.order_by(DetectionRun.id.desc())
+    detection_run = db.scalars(q).first()
+    if detection_run is None:
+        raise HTTPException(404, "No detection run for this match")
+    truth, spans = evaluation.verified_truth(db, match)
+    if not spans:
+        raise HTTPException(409, "No stretch of this match has been marked as fully checked yet")
+    result = evaluation.evaluate(evaluation.run_items(detection_run), truth, spans, tolerance)
+    result.update(run_id=detection_run.id, detector=detection_run.detector, demo=detection_run.detector == "stub")
+    return result

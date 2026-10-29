@@ -82,6 +82,8 @@ class Match(Base):
     )
     # ORM-level cascades: sqlite doesn't enforce ON DELETE CASCADE unless foreign keys are enabled.
     reels: Mapped[list["Reel"]] = relationship(back_populates="match", cascade="all, delete-orphan")
+    runs: Mapped[list["DetectionRun"]] = relationship(cascade="all, delete-orphan")
+    verified_spans: Mapped[list["VerifiedSpan"]] = relationship(cascade="all, delete-orphan")
 
     @property
     def has_video(self) -> bool:
@@ -130,3 +132,35 @@ class Reel(Base):
     @property
     def event_count(self) -> int:
         return len(self.event_ids or [])
+
+
+class DetectionRun(Base):
+    """What a detector produced for a match, exactly as it produced it. Coaches' edits change
+    Events, never this, so a run can always be scored against the verified events."""
+
+    __tablename__ = "detection_runs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    match_id: Mapped[int] = mapped_column(ForeignKey("matches.id", ondelete="CASCADE"), index=True)
+    detector: Mapped[str] = mapped_column(String(40))
+    drafts: Mapped[list] = mapped_column(JSON, default=list)  # validated EventDrafts as dicts
+    dropped: Mapped[int] = mapped_column(Integer, default=0)  # drafts that failed validation
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    @property
+    def event_count(self) -> int:
+        return len(self.drafts or [])
+
+
+class VerifiedSpan(Base):
+    """A stretch of video a human has fully checked: every detection in it reviewed and every
+    missed event tagged. Inside these spans the reviewed events are ground truth."""
+
+    __tablename__ = "verified_spans"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    match_id: Mapped[int] = mapped_column(ForeignKey("matches.id", ondelete="CASCADE"), index=True)
+    t_start: Mapped[float] = mapped_column(Float)
+    t_end: Mapped[float] = mapped_column(Float)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

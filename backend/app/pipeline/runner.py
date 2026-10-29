@@ -5,16 +5,22 @@ site in routers/matches.py with a queue job (RQ/Celery/Modal) that runs process_
 a GPU worker -- this function is already self-contained (opens its own DB session).
 """
 import logging
+from dataclasses import asdict
 from pathlib import Path
+
+from sqlalchemy import select
 
 from .. import config, taxonomy
 from ..proxy import build_proxy, needs_proxy
 from ..db import SessionLocal
-from ..models import Event, Match
+from ..models import DetectionRun, Event, Match
 from . import get_detector
 from .probe import probe
 
 log = logging.getLogger(__name__)
+
+# A new detection this close to a kept (manual/reviewed) event of the same type is the same event.
+DUPLICATE_WINDOW_S = 2.0
 
 
 def process_match(match_id: int) -> None:
@@ -42,13 +48,19 @@ def process_match(match_id: int) -> None:
             match.progress = round(p, 3)
             db.commit()
 
-        dropped = 0
+        # Events a human made or checked survive reprocessing; don't add a second copy of them.
+        kept = db.scalars(select(Event).where(Event.match_id == match.id)).all()
+
+        dropped, valid = 0, []
         for draft in detector.detect(video, info, pack, progress):
             try:
                 taxonomy.validate_event(match.sport, draft.type, draft.team, draft.attributes)
             except taxonomy.TaxonomyError as exc:  # a detector must not be able to poison the DB
                 dropped += 1
                 log.warning("match %s: dropped invalid draft: %s", match_id, exc)
+                continue
+            valid.append(draft)
+            if any(k.type == draft.type and abs(k.t_start - draft.t_start) <= DUPLICATE_WINDOW_S for k in kept):
                 continue
             db.add(
                 Event(
@@ -57,6 +69,8 @@ def process_match(match_id: int) -> None:
                     confidence=draft.confidence, origin=detector.name, reviewed=False,
                 )
             )
+        db.add(DetectionRun(match_id=match.id, detector=detector.name,
+                            drafts=[asdict(d) for d in valid], dropped=dropped))
         match.status, match.progress, match.detector = "ready", 1.0, detector.name
         db.commit()
         if dropped:

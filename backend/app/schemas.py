@@ -136,3 +136,31 @@ class ReelOut(BaseModel):
     segment_count: int | None
     duration_s: float | None
     created_at: datetime
+
+
+class RunOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    detector: str
+    event_count: int
+    dropped: int
+    created_at: datetime
+
+
+class SpanIn(BaseModel):
+    t_start: float = Field(ge=0)
+    t_end: float = Field(ge=0)
+
+    @model_validator(mode="after")
+    def _ordered(self):
+        if self.t_end <= self.t_start:
+            raise ValueError("t_end must be after t_start")
+        return self
+
+
+class SpanOut(SpanIn):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    created_at: datetime

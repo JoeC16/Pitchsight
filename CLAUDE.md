@@ -42,6 +42,8 @@ backend/app/
   clips.py                ffmpeg clip cutting with on-disk cache
   reels.py                reel export job: merge windows, cut, concat
   proxy.py                needs_proxy() rules + browser playback transcode
+  evaluation.py           precision/recall vs verified spans or a ground-truth CSV
+  evaluate.py             python -m app.evaluate (CLI for the above)
   routers/                auth, sports, matches (upload/video/events/summary/reels), events, reels
   pipeline/
     interfaces.py         Detector protocol, EventDraft, VideoInfo   <- the key seam

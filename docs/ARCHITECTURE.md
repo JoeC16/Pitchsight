@@ -45,6 +45,16 @@ the UI's demo banner doesn't travel with the file.
 Hard parts: ball outcome (point vs wide vs saved) from a distant view; GAA-specific training data
 barely exists publicly, so a labelled dataset is part of the work.
 
+## Measuring the detector (no separate ground truth needed)
+
+Each processing run's validated output is saved as a `DetectionRun` and never edited. A coach
+reviews the events (confirm / fix / delete), tags anything missed, then marks a stretch of video
+as fully checked (`VerifiedSpan`; refused while unreviewed events remain inside it). Inside
+checked stretches the reviewed events are ground truth, so `GET /matches/{id}/evaluation` and
+`python -m app.evaluate --match ID` score any run against them: per event type found / missed /
+false, precision, recall, team agreement, attribute accuracy (one-to-one matching on type within
+±3 s). A hand-tagged CSV (`sample_matches/ground_truth_template.csv`) works too (`--truth-csv`).
+
 ## Data model
 
 - `Club`: a customer. `User` belongs to one club (`admin` or `member`). `AuthSession` stores the
@@ -76,6 +86,10 @@ barely exists publicly, so a labelled dataset is part of the work.
 | GET | `/matches/{id}/events` | filtered list (see below) |
 | POST | `/matches/{id}/events` | manual tag (validated) |
 | GET | `/matches/{id}/summary` | counts, per-attribute breakdowns, score |
+| GET | `/matches/{id}/runs` | each detection run's original output (count, detector, time) |
+| GET/POST | `/matches/{id}/verified-spans` | stretches marked fully checked (POST refused if unreviewed events inside) |
+| DELETE | `/matches/{id}/verified-spans/{span_id}` | unmark a stretch |
+| GET | `/matches/{id}/evaluation?run=&tolerance=` | precision/recall of a run vs. checked stretches |
 | GET/PATCH/DELETE | `/events/{id}` | read / correct (sets reviewed) / remove |
 | GET | `/events/{id}/clip` | cut and cache an mp4 around the event |
 | POST | `/matches/{id}/reels?<event filters>` | 202; export matching events as one mp4 (background job) |

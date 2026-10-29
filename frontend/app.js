@@ -151,7 +151,8 @@ function renderShell() {
           ? h('video', { id: 'video', controls: true, preload: 'metadata', src: `/api/matches/${m.id}/video` })
           : h('div', { class: 'noval' }, 'No video uploaded')),
       h('div', { class: 'timeline', id: 'timeline', onclick: onTimelineClick }),
-      h('div', { id: 'summary' })),
+      h('div', { id: 'summary' }),
+      h('div', { id: 'checks' })),
     h('aside', { class: 'right' },
       h('div', { class: 'filters', id: 'filters' }),
       h('div', { class: 'listbar', id: 'listbar' }),
@@ -164,6 +165,7 @@ function renderShell() {
     v.addEventListener('pause', () => { /* reel keeps its place if the user pauses */ });
   }
   renderBanner(); renderHead(); renderTimeline(); renderSummary(); renderFilters(); renderList();
+  renderChecks();
 }
 
 function renderBanner() {
@@ -431,6 +433,45 @@ function renderExport() {
     r.status === 'ready' || r.status === 'failed' ? '' : h('div', { class: 'bar' }, h('div', { style: { width: `${pct}%` } }))));
 }
 
+// ---------- checked stretches + accuracy ----------
+// A coach marks a stretch "fully checked" once every detection in it is reviewed and every miss
+// tagged. Inside those stretches the reviewed events are ground truth for scoring the detector.
+async function renderChecks() {
+  const box = $('#checks'), m = S.match;
+  if (!box || m.status !== 'ready') return box && box.replaceChildren();
+  let spans, ev = null;
+  try {
+    spans = await api(`/matches/${m.id}/verified-spans`);
+    if (spans.length) ev = await api(`/matches/${m.id}/evaluation`);
+  } catch (_) { return; }
+  const v = video(), now = v ? v.currentTime : 0;
+  const from = Math.max(0, ...spans.filter((sp) => sp.t_end <= now + 0.01).map((sp) => sp.t_end));
+  const pct = (x) => (x == null ? '–' : `${Math.round(x * 100)}%`);
+  const mark = async () => {
+    const t = video() ? video().currentTime : 0;
+    try {
+      await api(`/matches/${m.id}/verified-spans`, { method: 'POST', body: { t_start: from, t_end: t } });
+      renderChecks();
+    } catch (e) { alert(e.message); }
+  };
+  box.replaceChildren(
+    h('div', { class: 'ftitle' }, 'Checked stretches'),
+    h('p', { class: 'muted small' }, 'Watch a stretch, review every event in it and tag anything missed, then mark it checked. Checked stretches are used to measure the detector.'),
+    h('div', { class: 'spans' },
+      ...spans.map((sp) => h('span', { class: 'tag span' }, `${fmtTime(sp.t_start)}–${fmtTime(sp.t_end)}`,
+        h('button', { class: 'x', title: 'Remove', onclick: async () => { await api(`/matches/${m.id}/verified-spans/${sp.id}`, { method: 'DELETE' }); renderChecks(); } }, '×'))),
+      h('button', { class: 'btn small', id: 'mark-checked', onclick: mark }, `Mark ${fmtTime(from)}–playhead as checked`)),
+    ev ? h('div', { class: 'accuracy' },
+      ev.demo ? h('div', { class: 'banner warn' }, 'Demo data: these detections are simulated, so the scores below mean nothing.') : '',
+      h('table', null,
+        h('tr', null, ...['Event', 'Found', 'Missed', 'False', 'Precision', 'Recall', 'Team ok'].map((c) => h('th', null, c))),
+        ...Object.entries(ev.types).map(([t, r]) => h('tr', null,
+          h('td', null, (typeDef(t) || { label: t }).label), h('td', null, r.tp), h('td', null, r.fn), h('td', null, r.fp),
+          h('td', null, pct(r.precision)), h('td', null, pct(r.recall)), h('td', null, pct(r.team_agreement))))),
+      h('p', { class: 'muted small' }, `${(ev.checked_seconds / 60).toFixed(1)} min checked · match within ±${ev.tolerance_s}s · run #${ev.run_id}`)) : '',
+  );
+}
+
 // ---------- review queue ----------
 // Unreviewed events matching the current filters, least confident first. Same filter query as
 // the list, plus reviewed=false&order=confidence.
@@ -618,7 +659,7 @@ function openEditor(ev, after = reloadEvents) {
 
 async function reloadEvents() {
   await loadEvents();
-  renderHead(); renderTimeline(); renderSummary(); renderFilters(); renderList();
+  renderHead(); renderTimeline(); renderSummary(); renderFilters(); renderList(); renderChecks();
 }
 
 // ---------- processing status ----------

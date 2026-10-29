@@ -228,6 +228,27 @@ function check(cond, msg) {
     await page.waitForSelector('#review', { state: 'detached' });
     check(await page.locator('.ev').count() === total, 'Esc exits review back to the list');
 
+    // --- checked stretches + accuracy
+    await page.evaluate(() => { const v = document.querySelector('#video'); v.pause(); v.currentTime = 30; });
+    await page.waitForTimeout(200);
+    const refused = new Promise((res) => page.once('dialog', async (d) => { res(d.message()); await d.dismiss(); }));
+    await page.locator('#mark-checked').click();
+    check(/unreviewed/.test(await refused), 'marking a stretch with unreviewed events is refused');
+    errors.splice(errors.findIndex((e) => /status of 409/.test(e)), 1); // that refusal is expected
+    await page.evaluate(async (id) => { // review everything in 0-30s, as a coach would
+      const evs = await (await fetch(`/api/matches/${id}/events?reviewed=false`)).json();
+      for (const e of evs.filter((x) => x.t_start <= 30)) {
+        await fetch(`/api/events/${e.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: '{"reviewed":true}' });
+      }
+    }, mid);
+    await page.evaluate(() => { document.querySelector('#video').currentTime = 30; });
+    await page.locator('#mark-checked').click();
+    await page.waitForSelector('#checks .accuracy table');
+    const acc = await page.locator('#checks').innerText();
+    check(/0:00–0:30/.test(acc) && /Demo data/.test(acc) && /Precision/.test(acc), 'stretch marked checked; accuracy table shown with demo warning');
+    await page.locator('#checks').scrollIntoViewIfNeeded();
+    await snap('accuracy');
+
     // --- invalid edit is rejected with a visible error (t_end < t_start)
     await page.locator('.ev').first().locator('button[title=Edit]').click();
     const bad = page.locator('dialog[open]');
