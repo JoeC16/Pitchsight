@@ -36,6 +36,7 @@ class MatchOut(BaseModel):
     proxy_status: str
     proxy_reason: str | None
     proxy_progress: float
+    pitch_setup: dict | None
     created_at: datetime
 
 
@@ -164,3 +165,17 @@ class SpanOut(SpanIn):
 
     id: int
     created_at: datetime
+
+
+class PitchPoint(BaseModel):
+    landmark: str
+    u: float  # pixels in the full-resolution frame
+    v: float
+
+
+class PitchSetupIn(BaseModel):
+    length: float | None = None  # metres; pack default if omitted
+    width: float | None = None
+    home_attacks_first: Literal["left", "right"]  # as the camera sees it, in period 1
+    frame_t: float = Field(default=0, ge=0)        # video time of the frame the points were clicked on
+    points: list[PitchPoint] = Field(min_length=4)

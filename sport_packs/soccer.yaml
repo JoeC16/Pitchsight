@@ -39,3 +39,20 @@ event_types:
     attributes:
       - { id: kind,    label: Kind,    values: [corner, free_kick, throw_in, goal_kick] }
       - { id: outcome, label: Outcome, values: [retained, lost, led_to_shot] }
+
+# Pitch geometry (metres); conventions as in gaa_football.yaml.
+pitch:
+  length: { default: 105, min: 90, max: 120 }
+  width:  { default: 68, min: 45, max: 90 }
+  lines_from_each_end: []
+  boxes:
+    - { name: six-yard box, depth: 5.5, width: 18.32 }
+    - { name: penalty area, depth: 16.5, width: 40.32 }
+  goal_width: 7.32
+  zones:
+    - { value: six_yard_box, box: six-yard box }
+    - { value: inside_box, box: penalty area }
+    - { value: outside_box, third: [0, 1.0] }
+    - { value: attacking_third, third: [0.6667, 1.0] }
+    - { value: middle_third, third: [0.3333, 0.6667] }
+    - { value: own_third, third: [0, 0.3333] }

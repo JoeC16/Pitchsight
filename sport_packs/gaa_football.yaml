@@ -54,3 +54,27 @@ event_types:
     attributes:
       - { id: reason, label: Reason, values: [tackle, over_carry, handpass_throw, other] }
       - { id: zone,   label: Zone,   values: [own_third, middle_third, attacking_third, inside_45] }
+
+# Pitch geometry (metres), used for calibration (pixel -> pitch) and to derive zone/side.
+# x runs along the pitch from the LEFT end line (as the camera sees it) to the right end line;
+# y runs across it from the NEAR (camera-side) sideline to the far one.
+pitch:
+  length: { default: 140, min: 130, max: 145 }
+  width:  { default: 85, min: 80, max: 90 }
+  lines_from_each_end: [13, 20, 45]          # full-width lines, metres from each end line
+  boxes:                                      # centred on each goal: depth from end line x width
+    - { name: small rectangle, depth: 4.5, width: 14 }
+    - { name: large rectangle, depth: 13, width: 19 }
+  goal_width: 6.5
+  # Rules for the `zone` attribute, from the point of view of the team in possession.
+  # First rule that matches AND whose value the event type allows wins.
+  #   from_goal: [a, b]  distance in metres from the end line being attacked
+  #   third:     [a, b]  fraction of the length toward the attacked end (0 = own end line)
+  #   box:       name    inside that box at the attacked end
+  zones:
+    - { value: inside_45, from_goal: [0, 45] }
+    - { value: attacking_third, third: [0.6667, 1.0] }
+    - { value: middle_third, third: [0.3333, 0.6667] }
+    - { value: own_third, third: [0, 0.3333] }
+  # `side` attribute: the pitch width split into equal lanes, left to right as the attacking team sees it.
+  sides: [left, centre, right]

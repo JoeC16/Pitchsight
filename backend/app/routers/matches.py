@@ -1,14 +1,15 @@
 import mimetypes
+import subprocess
 from pathlib import Path
 from urllib.parse import unquote
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
-from .. import analytics, config, evaluation, queries, reels, schemas, taxonomy
+from .. import analytics, config, evaluation, pitch, queries, reels, schemas, taxonomy
 from ..auth import CurrentUser
 from ..db import get_db
 from ..models import DetectionRun, Event, Match, Reel, User, VerifiedSpan
@@ -250,3 +251,66 @@ def evaluate_match(match_id: int, user: CurrentUser, run: int | None = None, tol
     result = evaluation.evaluate(evaluation.run_items(detection_run), truth, spans, tolerance)
     result.update(run_id=detection_run.id, detector=detection_run.detector, demo=detection_run.detector == "stub")
     return result
+
+
+# ---------- pitch calibration ----------
+
+@router.get("/{match_id}/frame")
+def frame(match_id: int, user: CurrentUser, t: float = 0.0, db: Session = Depends(get_db)):
+    """One full-resolution JPEG frame of the original video at `t` seconds (for calibration)."""
+    match = _get_match(db, match_id, user)
+    if not match.video_path or not Path(match.video_path).exists():
+        raise HTTPException(404, "No video")
+    t = max(0.0, min(t, (match.duration_s or t + 1) - 0.5))
+    result = subprocess.run(
+        ["ffmpeg", "-loglevel", "error", "-ss", f"{t:.3f}", "-i", match.video_path,
+         "-frames:v", "1", "-q:v", "3", "-f", "image2pipe", "-vcodec", "mjpeg", "-"],
+        capture_output=True, timeout=60,
+    )
+    if result.returncode != 0 or not result.stdout:
+        raise HTTPException(500, "Could not read a frame from the video")
+    return Response(result.stdout, media_type="image/jpeg")
+
+
+@router.get("/{match_id}/pitch")
+def get_pitch(match_id: int, user: CurrentUser, length: float | None = None, width: float | None = None,
+              db: Session = Depends(get_db)):
+    """Landmarks and markings for this match's pitch size, plus the saved setup if any."""
+    match = _get_match(db, match_id, user)
+    pack = taxonomy.get_pack(match.sport)
+    setup = match.pitch_setup or {}
+    try:
+        L, W = pitch.dims(pack, length or setup.get("length"), width or setup.get("width"))
+    except pitch.CalibrationError as exc:
+        raise HTTPException(422, str(exc)) from None
+    return {
+        "length": L, "width": W, "limits": {k: pack["pitch"][k] for k in ("length", "width")},
+        "landmarks": [vars(m) for m in pitch.landmarks(pack, L, W)],
+        "segments": pitch.segments(pack, L, W),
+        "setup": match.pitch_setup,
+    }
+
+
+@router.put("/{match_id}/pitch")
+def put_pitch(match_id: int, body: schemas.PitchSetupIn, user: CurrentUser, db: Session = Depends(get_db)):
+    """Save the calibration (>= 4 clicked landmarks) and direction of play."""
+    match = _get_match(db, match_id, user)
+    pack = taxonomy.get_pack(match.sport)
+    try:
+        L, W = pitch.dims(pack, body.length, body.width)
+        fit = pitch.calibrate(pack, L, W, [p.model_dump() for p in body.points])
+    except pitch.CalibrationError as exc:
+        raise HTTPException(422, str(exc)) from None
+    match.pitch_setup = {
+        "length": L, "width": W, "home_attacks_first": body.home_attacks_first, "frame_t": body.frame_t,
+        "points": [p.model_dump() for p in body.points], **fit,
+    }
+    db.commit()
+    return match.pitch_setup
+
+
+@router.delete("/{match_id}/pitch", status_code=204)
+def delete_pitch(match_id: int, user: CurrentUser, db: Session = Depends(get_db)):
+    match = _get_match(db, match_id, user)
+    match.pitch_setup = None
+    db.commit()

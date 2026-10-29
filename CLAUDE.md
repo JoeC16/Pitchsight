@@ -11,6 +11,7 @@ See `PROGRESS.md` for what is done, verified and blocked. The test suite runs an
 
 ```bash
 node e2e/ui_smoke.js path/to/video.mp4 http://localhost:8000 /tmp/shots
+backend/.venv/bin/python e2e/make_pitch_video.py /tmp/pv && node e2e/pitch_smoke.js /tmp/pv
 ```
 
 ## Run it
@@ -42,6 +43,7 @@ backend/app/
   clips.py                ffmpeg clip cutting with on-disk cache
   reels.py                reel export job: merge windows, cut, concat
   proxy.py                needs_proxy() rules + browser playback transcode
+  pitch.py                pitch geometry from the pack, homography calibration, zone/side lookup
   evaluation.py           precision/recall vs verified spans or a ground-truth CSV
   evaluate.py             python -m app.evaluate (CLI for the above)
   routers/                auth, sports, matches (upload/video/events/summary/reels), events, reels

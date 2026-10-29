@@ -102,6 +102,19 @@ a.btn { color: inherit; text-decoration: none; display: inline-block; }
 .tag.demo { color: var(--warn); border-color: #6b4d12; }
 .ev .attrs { color: var(--muted); font-size: 12.5px; }
 .ev .acts { display: flex; gap: 4px; }
+dialog.wide { width: min(1400px, 96vw); max-height: 94vh; }
+.pitchgrid { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 14px; }
+.lmlist { max-height: 46vh; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; }
+.lm { display: flex; justify-content: space-between; padding: 5px 8px; font-size: 12.5px; cursor: pointer; border-bottom: 1px solid var(--line); }
+.lm:hover { background: var(--panel2); } .lm.sel { background: #3a2c0c; } .lm.set span { color: var(--accent); }
+.lm .x { background: none; border: 0; color: var(--muted); cursor: pointer; }
+.framebox { position: relative; align-self: start; }
+.framebox img { width: 100%; display: block; border-radius: 6px; }
+.framebox canvas.overlay { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; }
+.fitstatus { margin-top: 10px; font-size: 13px; }
+.fitstatus.warn { color: var(--warn); } .fitstatus.bad { color: var(--bad); }
+.pitchbtn { margin-left: 10px; }
+@media (max-width: 1000px) { .pitchgrid { grid-template-columns: 1fr; } }
 #checks { margin-top: 16px; }
 .small { font-size: 12px; margin: 2px 0 8px; }
 .spans { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 10px; }

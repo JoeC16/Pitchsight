@@ -45,6 +45,15 @@ the UI's demo banner doesn't travel with the file.
 Hard parts: ball outcome (point vs wide vs saved) from a distant view; GAA-specific training data
 barely exists publicly, so a labelled dataset is part of the work.
 
+## Pitch calibration
+
+Sport packs define the pitch (`pitch:` in the YAML: dimensions, lines, boxes, and rules mapping a
+position to the pack's `zone`/`side` values). Veo's panoramic camera is fixed, so the coach clicks
+4+ landmarks (5+ to get a real error estimate) on one frame in **Set up pitch**; `pitch.py` fits a
+homography (normalised DLT) from pixels to metres and stores it, the fit error and the direction
+of play on `Match.pitch_setup`. The fitted markings are drawn back over the frame. Untested on real
+footage: stitched panoramas may need a lens/cylinder model if one homography fits poorly.
+
 ## Measuring the detector (no separate ground truth needed)
 
 Each processing run's validated output is saved as a `DetectionRun` and never edited. A coach
@@ -86,6 +95,8 @@ false, precision, recall, team agreement, attribute accuracy (one-to-one matchin
 | GET | `/matches/{id}/events` | filtered list (see below) |
 | POST | `/matches/{id}/events` | manual tag (validated) |
 | GET | `/matches/{id}/summary` | counts, per-attribute breakdowns, score |
+| GET | `/matches/{id}/frame?t=` | one JPEG frame of the original (for calibration) |
+| GET/PUT/DELETE | `/matches/{id}/pitch` | landmarks + markings for the pitch size / save calibration / clear |
 | GET | `/matches/{id}/runs` | each detection run's original output (count, detector, time) |
 | GET/POST | `/matches/{id}/verified-spans` | stretches marked fully checked (POST refused if unreviewed events inside) |
 | DELETE | `/matches/{id}/verified-spans/{span_id}` | unmark a stretch |

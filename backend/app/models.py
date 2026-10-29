@@ -75,6 +75,9 @@ class Match(Base):
     proxy_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)  # why one was needed
     proxy_progress: Mapped[float] = mapped_column(Float, default=0.0, server_default="0")
     proxy_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Pitch calibration + direction of play: {length, width, home_attacks_first, frame_t,
+    # points: [{landmark, u, v}], H, H_inv, rms_error_m, ...}. See pitch.py.
+    pitch_setup: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     events: Mapped[list["Event"]] = relationship(

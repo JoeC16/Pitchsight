@@ -197,7 +197,9 @@ function renderHead() {
   $('#mhead').replaceChildren(
     h('div', null,
       h('h1', null, m.title),
-      h('div', { class: 'sub' }, [m.played_on, S.pack.name, `${S.summary.total_events} events, ${S.summary.reviewed_events} reviewed`].filter(Boolean).join(' · '))),
+      h('div', { class: 'sub' }, [m.played_on, S.pack.name, `${S.summary.total_events} events, ${S.summary.reviewed_events} reviewed`].filter(Boolean).join(' · '),
+        m.has_video && m.status === 'ready' ? h('button', { class: 'btn small pitchbtn', id: 'pitch-setup', onclick: openPitchSetup },
+          m.pitch_setup ? `Pitch set up ✓ (${m.pitch_setup.rms_error_m} m)` : 'Set up pitch') : '')),
     sc ? h('div', { class: 'scoreline' },
       h('span', { class: 'home-c' }, sc.home.display), h('small', null, `${m.home_team} v ${m.away_team}`), h('span', { class: 'away-c' }, sc.away.display)) : '',
   );
@@ -431,6 +433,136 @@ function renderExport() {
   box.replaceChildren(h('div', { class: 'exportbox ' + r.status },
     h('div', { class: 'exportrow' }, ...body, close),
     r.status === 'ready' || r.status === 'failed' ? '' : h('div', { class: 'bar' }, h('div', { style: { width: `${pct}%` } }))));
+}
+
+// ---------- pitch setup (calibration) ----------
+// The coach clicks known pitch landmarks on one frame; the server fits a homography (pixels ->
+// metres). The fitted pitch is drawn back over the frame so a bad fit is obvious.
+const applyH = (H, x, y) => {
+  const w = H[2][0] * x + H[2][1] * y + H[2][2];
+  return [(H[0][0] * x + H[0][1] * y + H[0][2]) / w, (H[1][0] * x + H[1][1] * y + H[1][2]) / w];
+};
+
+async function openPitchSetup() {
+  const m = S.match;
+  let info = await api(`/matches/${m.id}/pitch`);
+  const setup = info.setup;
+  const st = {
+    length: info.length, width: info.width, attack: setup ? setup.home_attacks_first : 'right',
+    t: setup ? setup.frame_t : (video() ? Math.round(video().currentTime * 10) / 10 : 0),
+    points: Object.fromEntries((setup ? setup.points : []).map((p) => [p.landmark, { u: p.u, v: p.v }])),
+    fit: setup, selected: null,
+  };
+  const dlg = h('dialog', { class: 'wide' });
+  const img = h('img', { alt: 'Match frame' });
+  const canvas = h('canvas', { class: 'overlay' });
+  const list = h('div', { class: 'lmlist' });
+  const status = h('div', { class: 'fitstatus' });
+  const err = h('div', { class: 'err' });
+
+  const nextUnplaced = () => (info.landmarks.find((l) => !st.points[l.id]) || {}).id || null;
+  st.selected = nextUnplaced();
+
+  function draw() {
+    const W = img.naturalWidth, H = img.naturalHeight;
+    if (!W) return;
+    canvas.width = W; canvas.height = H;
+    const c = canvas.getContext('2d');
+    c.clearRect(0, 0, W, H);
+    const scale = W / img.clientWidth; // keep strokes visible on big panoramas
+    if (st.fit) {
+      c.strokeStyle = 'rgba(63,185,127,.9)'; c.lineWidth = 2 * scale;
+      for (const [[x0, y0], [x1, y1]] of info.segments) {
+        c.beginPath();
+        for (let i = 0; i <= 20; i++) {
+          const [u, v] = applyH(st.fit.H_inv, x0 + (x1 - x0) * i / 20, y0 + (y1 - y0) * i / 20);
+          i ? c.lineTo(u, v) : c.moveTo(u, v);
+        }
+        c.stroke();
+      }
+    }
+    c.font = `${12 * scale}px system-ui`;
+    for (const [id, p] of Object.entries(st.points)) {
+      c.fillStyle = id === st.selected ? '#f5a524' : '#ff7a59';
+      c.beginPath(); c.arc(p.u, p.v, 5 * scale, 0, 7); c.fill();
+      c.fillText(info.landmarks.find((l) => l.id === id)?.label || id, p.u + 8 * scale, p.v - 6 * scale);
+    }
+  }
+
+  function drawList() {
+    list.replaceChildren(...info.landmarks.map((l) => h('div', {
+      class: 'lm' + (l.id === st.selected ? ' sel' : '') + (st.points[l.id] ? ' set' : ''),
+      onclick: () => { st.selected = l.id; drawList(); draw(); },
+    }, h('span', null, (st.points[l.id] ? '✓ ' : '') + l.label),
+    st.points[l.id] ? h('button', { class: 'x', title: 'Remove point', onclick: (e) => { e.stopPropagation(); delete st.points[l.id]; st.fit = null; drawList(); draw(); } }, '×') : '')));
+    const n = Object.keys(st.points).length;
+    let msg = `${n} point${n === 1 ? '' : 's'} placed. `;
+    if (!st.selected) msg += 'Pick a landmark on the left. ';
+    else msg += `Click the frame where: ${info.landmarks.find((l) => l.id === st.selected).label}. `;
+    if (n < 4) msg += `Need at least 4 (5+ to check the fit).`;
+    let cls = '';
+    if (st.fit) {
+      msg = `Saved. Fit error ${st.fit.rms_error_m} m RMS (worst ${st.fit.max_error_m} m) over ${Object.keys(st.points).length} points. `;
+      if (!st.fit.overdetermined) { msg += 'With exactly 4 points the fit is always perfect; add a 5th to check it.'; cls = 'warn'; }
+      else if (st.fit.rms_error_m > 1.5) { msg += 'That is poor: check the points, or the panorama may be too distorted for one fit.'; cls = 'bad'; }
+      else msg += 'Check the green lines sit on the pitch markings.';
+    }
+    status.className = 'fitstatus ' + cls;
+    status.textContent = msg;
+  }
+
+  canvas.addEventListener('click', (e) => {
+    if (!st.selected) return;
+    const r = canvas.getBoundingClientRect();
+    st.points[st.selected] = { u: (e.clientX - r.left) / r.width * img.naturalWidth, v: (e.clientY - r.top) / r.height * img.naturalHeight };
+    st.fit = null;
+    st.selected = nextUnplaced();
+    drawList(); draw();
+  });
+  img.addEventListener('load', draw);
+  const loadFrame = () => { img.src = `/api/matches/${m.id}/frame?t=${st.t}`; };
+
+  const dimsChanged = async () => {
+    try {
+      info = await api(`/matches/${m.id}/pitch?length=${st.length}&width=${st.width}`);
+      st.fit = null; err.textContent = ''; drawList(); draw();
+    } catch (e) { err.textContent = e.message; }
+  };
+  async function save() {
+    err.textContent = '';
+    try {
+      st.fit = await api(`/matches/${m.id}/pitch`, { method: 'PUT', body: {
+        length: st.length, width: st.width, home_attacks_first: st.attack, frame_t: st.t,
+        points: Object.entries(st.points).map(([landmark, p]) => ({ landmark, u: p.u, v: p.v })) } });
+      S.match = await api('/matches/' + m.id);
+      renderHead(); drawList(); draw();
+    } catch (e) { err.textContent = e.message; }
+  }
+
+  dlg.append(
+    h('h3', null, 'Pitch setup'),
+    h('p', { class: 'muted small' }, 'Pick a landmark, click where it is on the frame, repeat for at least 5 spread across the pitch. The camera must not move during the match.'),
+    h('div', { class: 'pitchgrid' },
+      h('div', null,
+        h('div', { class: 'row' },
+          field(`Length (m, ${info.limits.length.min}-${info.limits.length.max})`, h('input', { type: 'number', value: st.length, onchange: (e) => { st.length = Number(e.target.value); dimsChanged(); } })),
+          field(`Width (m, ${info.limits.width.min}-${info.limits.width.max})`, h('input', { type: 'number', value: st.width, onchange: (e) => { st.width = Number(e.target.value); dimsChanged(); } }))),
+        field(`${m.home_team} attack in the 1st half`, select([['right', 'the right-hand end'], ['left', 'the left-hand end']], st.attack, (v) => { st.attack = v; })),
+        field('Frame (seconds into video)', h('div', { class: 'row' },
+          h('input', { type: 'number', step: '0.1', value: st.t, onchange: (e) => { st.t = Number(e.target.value); } }),
+          h('button', { class: 'btn small', onclick: loadFrame }, 'Load frame'))),
+        h('div', { class: 'ftitle' }, 'Landmarks'), list),
+      h('div', { class: 'framebox' }, img, canvas)),
+    status, err,
+    h('div', { class: 'actions' },
+      st.fit ? h('button', { class: 'btn danger', onclick: async () => { await api(`/matches/${m.id}/pitch`, { method: 'DELETE' }); S.match = await api('/matches/' + m.id); renderHead(); dlg.close(); } }, 'Clear setup') : null,
+      h('span', { class: 'spacer' }),
+      h('button', { class: 'btn', onclick: () => dlg.close() }, 'Close'),
+      h('button', { class: 'btn primary', id: 'pitch-save', onclick: save }, 'Save')));
+  dlg.addEventListener('close', () => dlg.remove());
+  document.body.append(dlg);
+  drawList(); loadFrame();
+  dlg.showModal();
 }
 
 // ---------- checked stretches + accuracy ----------
