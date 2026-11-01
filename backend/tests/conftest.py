@@ -4,6 +4,19 @@ import tempfile
 # Must be set before the app is imported: config reads the environment at import time.
 os.environ["PITCHSIGHT_DATA_DIR"] = tempfile.mkdtemp(prefix="pitchsight-test-")
 
+# Optional: run the suite against another database (e.g. Postgres in CI). It is wiped first, so
+# only databases whose name contains "test" are accepted.
+if test_db := os.environ.get("PITCHSIGHT_TEST_DB_URL"):
+    from sqlalchemy import create_engine, text
+    from sqlalchemy.engine import make_url
+
+    if "test" not in (make_url(test_db).database or ""):
+        raise RuntimeError("PITCHSIGHT_TEST_DB_URL must name a database containing 'test' (it gets wiped)")
+    with create_engine(test_db).begin() as conn:
+        conn.execute(text("DROP SCHEMA public CASCADE"))
+        conn.execute(text("CREATE SCHEMA public"))
+    os.environ["PITCHSIGHT_DB_URL"] = test_db
+
 import itertools
 
 import pytest

@@ -14,10 +14,16 @@ Requires Python 3.11+ and ffmpeg.
 ```bash
 cd backend
 python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 pytest
 uvicorn app.main:app --reload
 ```
+
+Or with Docker (app + Postgres): `docker compose up --build`.
+
+To run the tests against Postgres: `PITCHSIGHT_TEST_DB_URL=postgresql+psycopg://user@host/pitchsight_test pytest`
+(the database is wiped; its name must contain "test"). CI (`.github/workflows/ci.yml`) runs pytest on
+SQLite and Postgres, the browser tests, and builds and starts the Docker stack.
 
 Open http://localhost:8000, click **New match**, pick a Veo mp4 and upload. Events appear when
 processing finishes (seconds with the stub).

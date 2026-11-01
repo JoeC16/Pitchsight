@@ -52,3 +52,11 @@ def test_pre_alembic_database_is_adopted_and_keeps_data(tmp_path):
         # Pre-auth matches are moved into a "Default club".
         assert conn.execute(text("SELECT c.name FROM matches m JOIN clubs c ON c.id = m.club_id")).scalar() == "Default club"
         assert conn.execute(text("SELECT count(*) FROM alembic_version")).scalar() == 1
+
+
+def test_models_match_migrations_on_the_test_database(client):
+    """Same check as above, on whatever database the suite runs against (Postgres in CI)."""
+    from app.db import engine
+    with engine.connect() as conn:
+        diff = compare_metadata(MigrationContext.configure(conn), Base.metadata)
+    assert diff == [], f"{engine.dialect.name}: models and migrations disagree: {diff}"

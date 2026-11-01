@@ -1,0 +1,30 @@
+# Local development stack:  docker compose up --build   ->  http://localhost:8000
+# Data lives in named volumes; `docker compose down -v` wipes it.
+services:
+  db:
+    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
+    environment:
+      POSTGRES_USER: pitchsight
+      POSTGRES_PASSWORD: pitchsight
+      POSTGRES_DB: pitchsight
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pitchsight"]
+      interval: 3s
+      retries: 20
+
+  app:
+    build:
+      context: .
+      args: { PYTHON_IMAGE: "${PYTHON_IMAGE:-python:3.12-slim}" }
+    environment:
+      PITCHSIGHT_DB_URL: postgresql+psycopg://pitchsight:pitchsight@db:5432/pitchsight
+      PITCHSIGHT_DETECTOR: ${PITCHSIGHT_DETECTOR:-stub}
+    volumes: [appdata:/data]
+    ports: ["8000:8000"]
+    depends_on:
+      db: { condition: service_healthy }
+
+volumes:
+  pgdata:
+  appdata:

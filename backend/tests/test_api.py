@@ -199,3 +199,7 @@ def test_review_queue_puts_unknown_confidence_first(client, match):
         db.commit()
     queue = client.get(base, params={"reviewed": "false", "order": "confidence"}).json()
     assert [q["confidence"] for q in queue] == [None, 0.1]
+
+
+def test_health(anon):
+    assert anon.get("/api/health").json() == {"status": "ok"}

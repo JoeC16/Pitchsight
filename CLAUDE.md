@@ -19,7 +19,7 @@ backend/.venv/bin/python e2e/make_pitch_video.py /tmp/pv && node e2e/pitch_smoke
 ```bash
 cd backend
 python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt          # needs ffmpeg + ffprobe on PATH
+pip install -r requirements-dev.txt      # needs ffmpeg + ffprobe on PATH
 pytest
 uvicorn app.main:app --reload             # UI + API at http://localhost:8000
 ```

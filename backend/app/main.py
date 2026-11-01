@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import update
+from sqlalchemy import text, update
 
 from . import config, models
 from .db import SessionLocal
@@ -36,6 +36,15 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="PitchSight", lifespan=lifespan)
+
+
+@app.get("/api/health", tags=["ops"])
+def health() -> dict:
+    """For load balancers / uptime checks: 200 when the app can reach its database."""
+    with SessionLocal() as db:
+        db.execute(text("SELECT 1"))
+    return {"status": "ok"}
+
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(sports.router, prefix="/api/sports", tags=["sports"])
 app.include_router(matches.router, prefix="/api/matches", tags=["matches"])
