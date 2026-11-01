@@ -121,7 +121,7 @@ A hand-tagged CSV still works.
 | Postgres | works | whole suite passes on Postgres 16 locally and in CI; migrations == models checked on Postgres |
 | Docker image (python slim + ffmpeg, non-root, healthcheck, `/api/health`) | built | CI builds and starts it (couldn't build here: this sandbox's containers can't reach its network proxy) |
 | docker-compose: app + worker + Postgres + S3 emulator | built | CI job uploads a video and waits for the worker to process it via the bucket |
-| CI (GitHub Actions): pytest on SQLite and Postgres, both browser tests, docker stack | running on every push | run 1 green; run 2 failed on MinIO image tags (replaced); see the latest run |
+| CI (GitHub Actions): pytest on SQLite and Postgres, both browser tests, docker stack | green (run 6) | runs 2-5 failed and were fixed: unpullable MinIO images (replaced by an S3 emulator from our own Dockerfile), a dev-stage path bug, duplicate parallel image builds |
 | Object storage (`PITCHSIGHT_STORAGE=s3`: S3 / R2 / MinIO), local disk as cache, signed-URL playback/downloads | built | moto tests (upload, playback redirect, clips from a machine without the file, reels, deletion); local run with API and worker on separate disks, API copy deleted |
 | Persistent job queue (`PITCHSIGHT_JOBS=queue`) + `python -m app.worker` (atomic claim, heartbeat, retry, give up after 3, kinds per worker) | built | tests incl. dead worker retried then failed, heartbeat keeps a long job alive, proxy/reel jobs on a separate worker |
 | GPU worker on a provider (Modal/RunPod) | not built | needs an account and the detection model |
