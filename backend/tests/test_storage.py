@@ -49,9 +49,10 @@ def test_put_get_round_trip_and_cache(s3, tmp_path):
     src.write_bytes(b"x" * 1000)
     assert storage.persist(src, "videos/a.bin") == "videos/a.bin"
     assert keys(s3) == {"club-data/videos/a.bin"}
-    cache = tmp_path / "cache" / "a.bin"
-    assert storage.ensure_local(cache, "videos/a.bin") == cache and cache.read_bytes() == src.read_bytes()
-    assert not list(cache.parent.glob("*.download"))  # no partial file left behind
+    got = storage.ensure_local(tmp_path / "not-here" / "a.bin", "videos/a.bin")
+    assert got == storage.cache_path("videos/a.bin") and got.read_bytes() == src.read_bytes()
+    assert not list(got.parent.glob("*.download"))  # no partial file left behind
+    assert storage.ensure_local(src, "videos/a.bin") == src  # a local original wins
     with pytest.raises(FileNotFoundError):
         storage.ensure_local(tmp_path / "nope", None)
     url = storage.signed_url("videos/a.bin", filename="game.mp4", content_type="video/mp4")
@@ -74,16 +75,20 @@ def test_match_lifecycle_with_bucket(s3, client, match, tmp_path):
     r = client.get(f"/api/matches/{m}/video", follow_redirects=False)
     assert r.status_code == 307 and f"club-data/proxies/m{m}.mp4" in r.headers["location"]
 
-    # Wipe the local cache (as on a fresh worker): clips and frames still work, from the bucket.
+    # As on another machine: the recorded path points at a disk this machine doesn't have.
+    # Clips and frames still work, from this machine's own cache, filled from the bucket.
+    from app import config
     from app.db import SessionLocal
     from app.models import Match
     with SessionLocal() as db:
-        local = Path(db.get(Match, m).video_path)
-    local.unlink()
-    ev = client.get(f"/api/matches/{m}/events").json()[0]
-    assert client.get(f"/api/events/{ev['id']}/clip").status_code == 200
-    assert local.exists()  # re-downloaded into the cache
-    local.unlink()
+        row = db.get(Match, m)
+        Path(row.video_path).unlink()
+        row.video_path = f"/elsewhere/machine-a/videos/{m}.mkv"
+        db.commit()
+    ev = client.get(f"/api/events/{client.get(f'/api/matches/{m}/events').json()[0]['id']}")
+    assert client.get(f"/api/events/{ev.json()['id']}/clip").status_code == 200
+    cached = config.DATA_DIR / "cache" / f"videos/m{m}.mkv"
+    assert cached.exists() and not Path("/elsewhere").exists()
     assert client.get(f"/api/matches/{m}/frame", params={"t": 5}).status_code == 200
 
     # Reels are stored too and downloaded via a signed URL with the right filename.

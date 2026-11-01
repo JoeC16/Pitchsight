@@ -88,14 +88,25 @@ def persist(local: Path, key: str) -> str | None:
     return key
 
 
+def cache_path(key: str) -> Path:
+    """Where this machine keeps its copy of a stored object. Derived from this machine's own
+    data dir: a path recorded by another machine (e.g. the API that took the upload) means
+    nothing here."""
+    from . import config
+    return config.DATA_DIR / "cache" / key
+
+
 def ensure_local(local: str | Path | None, key: str | None) -> Path:
-    """The file on local disk, downloading it from the bucket first if the cache lacks it."""
+    """The file on local disk: the original if this machine has it, else this machine's cached
+    copy, downloading it from the bucket first if needed."""
     if local and Path(local).exists():
         return Path(local)
     store = remote()
-    if local and key and store is not None:
-        store.get(key, Path(local))
-        return Path(local)
+    if key and store is not None:
+        cached = cache_path(key)
+        if not cached.exists():
+            store.get(key, cached)
+        return cached
     raise FileNotFoundError(f"{local or key} is not on this machine or in storage")
 
 

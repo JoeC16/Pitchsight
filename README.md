@@ -19,7 +19,7 @@ pytest
 uvicorn app.main:app --reload
 ```
 
-Or with Docker (app + job worker + Postgres + MinIO for S3-style storage): `docker compose up --build`.
+Or with Docker (app + job worker + Postgres + an S3 emulator): `docker compose up --build`.
 
 To run the tests against Postgres: `PITCHSIGHT_TEST_DB_URL=postgresql+psycopg://user@host/pitchsight_test pytest`
 (the database is wiped; its name must contain "test"). CI (`.github/workflows/ci.yml`) runs pytest on
