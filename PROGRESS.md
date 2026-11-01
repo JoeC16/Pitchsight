@@ -105,4 +105,29 @@ A hand-tagged CSV still works.
   classifier on verified shots.
 - Frees aren't detected (need the referee's whistle; possibly audio later).
 
-## Phase D: production readiness — not started (waiting on Phase C, per the phase order)
+## Preparing for the 100 tagged games (arriving mid-week)
+
+| Piece | Status | Verified by |
+|---|---|---|
+| Tag importers: Sportscode/Nacsport-style XML, CSV (delimiter + time format detected) | built | fixtures for both; `python -m app.tags inspect` lists codes/labels and writes a starter mapping |
+| Provider mapping YAML -> sport-pack events (team by name, "tag names the loser" inversion, value maps, ignore list), all validated; report of unmapped codes/values, missing teams, invalid | built | tests; `convert --strict` fails on anything unmapped |
+| Dataset manifest + `python -m app.dataset import / split / run / evaluate` | built | grouped split never puts a ground in two splits; end-to-end import -> run -> evaluate on generated games |
+| Needs from the provider | **waiting** | one sample game + tag file; whether times are video- or match-clock; their definitions; written permission to train a commercial product on it |
+
+## Phase D: production readiness — IN PROGRESS (started early, with your go-ahead)
+
+| Piece | Status | Verified by |
+|---|---|---|
+| Postgres | works | whole suite passes on Postgres 16 locally and in CI; migrations == models checked on Postgres |
+| Docker image (python slim + ffmpeg, non-root, healthcheck, `/api/health`) | built | CI builds and starts it (couldn't build here: this sandbox's containers can't reach its network proxy) |
+| docker-compose: app + worker + Postgres + S3 emulator | built | CI job uploads a video and waits for the worker to process it via the bucket |
+| CI (GitHub Actions): pytest on SQLite and Postgres, both browser tests, docker stack | running on every push | run 1 green; run 2 failed on MinIO image tags (replaced); see the latest run |
+| Object storage (`PITCHSIGHT_STORAGE=s3`: S3 / R2 / MinIO), local disk as cache, signed-URL playback/downloads | built | moto tests (upload, playback redirect, clips from a machine without the file, reels, deletion); local run with API and worker on separate disks, API copy deleted |
+| Persistent job queue (`PITCHSIGHT_JOBS=queue`) + `python -m app.worker` (atomic claim, heartbeat, retry, give up after 3, kinds per worker) | built | tests incl. dead worker retried then failed, heartbeat keeps a long job alive, proxy/reel jobs on a separate worker |
+| GPU worker on a provider (Modal/RunPod) | not built | needs an account and the detection model |
+| Direct browser -> bucket uploads (presigned multipart) | not built | today: browser -> API disk -> bucket |
+| Security gaps (rate limiting, password reset, invite-only signup, CSRF token, secure headers) | not built | |
+| Hosting, backups, monitoring, GDPR paperwork, billing | not started | needs your decisions/accounts |
+
+**Fixed along the way:** a worker on another machine would have tried to download into the API
+machine's directory (cache path now per machine).
