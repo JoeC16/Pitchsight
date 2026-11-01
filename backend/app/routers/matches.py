@@ -9,11 +9,10 @@ from fastapi.responses import FileResponse, RedirectResponse, Response
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
-from .. import analytics, config, evaluation, pitch, queries, reels, schemas, storage, taxonomy
+from .. import analytics, config, evaluation, jobs, pitch, queries, schemas, storage, taxonomy
 from ..auth import CurrentUser
 from ..db import get_db
 from ..models import DetectionRun, Event, Match, Reel, User, VerifiedSpan
-from ..pipeline.runner import process_match
 
 router = APIRouter()
 
@@ -106,7 +105,11 @@ async def upload_video(
     match.video_key = match.proxy_key = None
     match.proxy_path, match.proxy_status, match.proxy_reason, match.proxy_progress = None, "none", None, 0.0
     db.commit()
-    background.add_task(process_match, match.id)
+    if config.JOBS_MODE == "queue" and storage.remote() is not None:
+        # A worker on another machine can't see this disk: store the upload before queueing.
+        match.video_key = await run_in_threadpool(storage.persist, dest, f"videos/m{match.id}{ext}")
+        db.commit()
+    jobs.submit(background, db, "process_match", match.id)
     return match
 
 
@@ -137,7 +140,7 @@ def reprocess(match_id: int, background: BackgroundTasks, user: CurrentUser, db:
     db.execute(delete(Event).where(Event.match_id == match.id, Event.origin != "manual", Event.reviewed.is_(False)))
     match.status, match.progress, match.error = "uploaded", 0.0, None
     db.commit()
-    background.add_task(process_match, match.id)
+    jobs.submit(background, db, "process_match", match.id)
     return match
 
 
@@ -191,7 +194,7 @@ def create_reel(
     reel = Reel(match_id=match.id, filters=str(request.query_params), event_ids=ids)
     db.add(reel)
     db.commit()
-    background.add_task(reels.build_reel, reel.id)
+    jobs.submit(background, db, "build_reel", reel.id)
     return reel
 
 

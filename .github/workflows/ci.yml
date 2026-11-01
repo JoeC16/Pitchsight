@@ -90,9 +90,28 @@ jobs:
         run: |
           for i in $(seq 60); do curl -sf localhost:8000/api/health && break; sleep 2; done
           curl -sf localhost:8000/api/health
-          curl -sf -X POST localhost:8000/api/auth/register -H 'content-type: application/json' \
-            -d '{"club_name":"CI","email":"ci@example.com","password":"ci-password"}'
           docker compose exec -T app ffmpeg -version | head -1
+      - name: Upload is processed by the worker via the bucket
+        run: |
+          set -e
+          api=localhost:8000/api
+          curl -sf -c jar -X POST $api/auth/register -H 'content-type: application/json' \
+            -d '{"club_name":"CI","email":"ci@example.com","password":"ci-password"}'
+          id=$(curl -sf -b jar -X POST $api/matches -H 'content-type: application/json' \
+            -d '{"title":"CI","sport":"gaa_football","home_team":"A","away_team":"B"}' | python3 -c 'import json,sys;print(json.load(sys.stdin)["id"])')
+          docker compose exec -T app ffmpeg -loglevel error -f lavfi -i testsrc=duration=60:size=320x240:rate=10 \
+            -pix_fmt yuv420p -movflags frag_keyframe+empty_moov -f mp4 pipe:1 > v.mp4
+          curl -sf -b jar -X PUT $api/matches/$id/video -H 'X-Filename: v.mp4' --data-binary @v.mp4 > /dev/null
+          for i in $(seq 60); do
+            status=$(curl -sf -b jar $api/matches/$id | python3 -c 'import json,sys;print(json.load(sys.stdin)["status"])')
+            [ "$status" = ready ] && break; [ "$status" = failed ] && break; sleep 2
+          done
+          curl -sf -b jar $api/matches/$id
+          [ "$status" = ready ]
+          n=$(curl -sf -b jar $api/matches/$id/events | python3 -c 'import json,sys;print(len(json.load(sys.stdin)))')
+          echo "$n events"; [ "$n" -gt 10 ]
+          code=$(curl -s -o /dev/null -w '%{http_code}' -b jar $api/matches/$id/video)
+          echo "playback -> $code"; [ "$code" = 307 ]   # redirected to the bucket
       - if: failure()
         run: docker compose logs
       - if: always()

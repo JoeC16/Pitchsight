@@ -121,9 +121,27 @@ Event filters: `type=a,b` `team=home|away` `period=1|2` `min_conf=0.6` `attr.<id
 
 Review UI keys: Enter confirm, E edit, D twice delete, ←/→ prev/next, Esc exit.
 
-## Scaling notes
+## Deployment shape
 
-- Processing is in-process today. Move `process_match` behind a queue and run it on a GPU worker;
-  the function is already self-contained.
-- Swap sqlite for Postgres (set `PITCHSIGHT_DB_URL`) and local disk for object storage.
+```
+browser --> app (API + UI) --> Postgres            jobs table, matches, events
+               |       \--> bucket (S3/R2)          videos, proxies, reels (signed URLs to browsers)
+               v
+           jobs table <-- worker(s)  python -m app.worker [--kinds ...]
+                            |-- process_match   (detection: put these on GPU machines)
+                            |-- build_proxy     (ffmpeg)
+                            '-- build_reel      (ffmpeg)
+```
+
+- `PITCHSIGHT_JOBS=queue`: the API only records jobs; workers claim them atomically, heartbeat,
+  and retry jobs whose worker died (`JOB_LEASE_S`, `JOB_MAX_ATTEMPTS`). `inline` (default) runs them
+  in the API process, for development.
+- `PITCHSIGHT_STORAGE=s3`: the bucket holds durable files; every machine's disk is a cache filled by
+  `storage.ensure_local()`. With a queue and a bucket, uploads are stored before being queued so any
+  worker can take them.
+- GPU: run `python -m app.worker --kinds process_match` on GPU machines (e.g. a Modal or RunPod
+  container built from the same image plus the model's dependencies); ffmpeg jobs can run on cheap
+  CPU workers. Not wired to a provider yet: needs an account and the detection model.
+- Not built yet: direct browser-to-bucket uploads (presigned multipart; today uploads stream through
+  the API to disk, then to the bucket), cache eviction on workers, autoscaling.
 - GPU time per match is the main unit cost; price plans accordingly.

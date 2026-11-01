@@ -13,7 +13,7 @@ from sqlalchemy import select
 from .. import config, storage, taxonomy
 from ..proxy import build_proxy, needs_proxy
 from ..db import SessionLocal
-from ..models import DetectionRun, Event, Match
+from ..models import DetectionRun, Event, Job, Match
 from . import get_detector
 from .interfaces import MatchContext
 from .probe import probe
@@ -82,8 +82,12 @@ def process_match(match_id: int) -> None:
             log.warning("match %s: %d invalid drafts dropped", match_id, dropped)
         # After detection so events show up first; until it's ready the original is served.
         if match.proxy_status == "pending":
-            db.close()
-            build_proxy(match_id)
+            if config.JOBS_MODE == "queue":
+                db.add(Job(kind="build_proxy", target_id=match_id))  # may run on a cheaper worker
+                db.commit()
+            else:
+                db.close()
+                build_proxy(match_id)
     except Exception as exc:  # noqa: BLE001 - surface any failure on the match, don't crash the worker
         db.rollback()
         log.exception("processing match %s failed", match_id)

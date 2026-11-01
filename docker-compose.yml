@@ -35,12 +35,13 @@ services:
       sh -c "mc alias set local http://minio:9000 pitchsight pitchsight-dev-only && mc mb -p local/pitchsight"
 
   app:
-    build:
+    build: &build
       context: .
       args: { PYTHON_IMAGE: "${PYTHON_IMAGE:-python:3.12-slim}" }
-    environment:
+    environment: &env
       PITCHSIGHT_DB_URL: postgresql+psycopg://pitchsight:pitchsight@db:5432/pitchsight
       PITCHSIGHT_DETECTOR: ${PITCHSIGHT_DETECTOR:-stub}
+      PITCHSIGHT_JOBS: queue
       PITCHSIGHT_STORAGE: s3
       PITCHSIGHT_S3_BUCKET: pitchsight
       PITCHSIGHT_S3_ENDPOINT: http://minio:9000
@@ -49,9 +50,18 @@ services:
       AWS_DEFAULT_REGION: us-east-1
     volumes: [appdata:/data]
     ports: ["8000:8000"]
-    depends_on:
+    depends_on: &deps
       db: { condition: service_healthy }
       minio-bucket: { condition: service_completed_successfully }
+
+  # Runs processing, proxy and reel jobs. Its own disk on purpose: like a separate machine, it
+  # gets videos from the bucket. Scale with `docker compose up --scale worker=3`.
+  worker:
+    build: *build
+    environment: *env
+    command: ["python", "-m", "app.worker"]
+    healthcheck: { disable: true }
+    depends_on: *deps
 
 volumes:
   pgdata:

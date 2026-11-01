@@ -43,6 +43,7 @@ backend/app/
   clips.py                ffmpeg clip cutting with on-disk cache
   reels.py                reel export job: merge windows, cut, concat
   proxy.py                needs_proxy() rules + browser playback transcode
+  jobs.py, worker.py      background jobs: inline, or DB queue + `python -m app.worker` (heartbeat, retry)
   storage.py              local disk or S3/R2 bucket; ensure_local() downloads into the cache, signed URLs
   pitch.py                pitch geometry from the pack, homography calibration, zone/side lookup
   evaluation.py           precision/recall vs verified spans or a ground-truth CSV
@@ -88,6 +89,9 @@ docs/ROADMAP.md           phased plan with exit criteria and risks
   survive a model upgrade. Confidence is stored so low-confidence items can be queued for review.
 - **The Detector protocol is the seam** between video and everything else. The runner validates
   every draft against the pack and drops invalid ones, so a buggy model can't corrupt data.
+- **Background work goes through `jobs.submit()`**, never `BackgroundTasks` directly, so it runs
+  on workers in production (`PITCHSIGHT_JOBS=queue`). Job functions record their own failures on
+  the match/reel and must be safe to re-run (a job is retried if its worker dies).
 - **Files go through `storage`.** Anything that needs a video on disk calls
   `storage.ensure_local(path, key)`; anything finished and durable is `storage.persist()`ed. Never
   assume the local copy exists: with `PITCHSIGHT_STORAGE=s3` local disk is only a cache.
@@ -97,9 +101,9 @@ docs/ROADMAP.md           phased plan with exit criteria and risks
 
 ## Not built yet (don't assume these exist)
 
-Frame decoding and player/ball detection + tracking (the model half of `pipeline/real.py`), a job queue and GPU
-worker (processing runs in-process via FastAPI BackgroundTasks), direct browser-to-bucket uploads,
-Veo import automation
+Frame decoding and player/ball detection + tracking (the model half of `pipeline/real.py`), a GPU
+provider for workers (Modal/RunPod), direct browser-to-bucket uploads, worker cache eviction,
+deployment to a host, Veo import automation
 (users download the file from Veo and upload it by hand).
 
 ## Suggested next tasks, in order

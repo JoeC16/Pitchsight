@@ -170,3 +170,21 @@ class VerifiedSpan(Base):
     t_end: Mapped[float] = mapped_column(Float)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class Job(Base):
+    """Background work that must survive restarts: processing, proxies, reels (see jobs.py)."""
+
+    __tablename__ = "jobs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(40), index=True)   # process_match | build_proxy | build_reel
+    target_id: Mapped[int] = mapped_column(Integer)              # match id or reel id
+    # queued -> running -> done | failed
+    status: Mapped[str] = mapped_column(String(20), default="queued", index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    worker: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

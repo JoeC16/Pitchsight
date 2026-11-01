@@ -19,7 +19,7 @@ pytest
 uvicorn app.main:app --reload
 ```
 
-Or with Docker (app + Postgres + MinIO for S3-style storage): `docker compose up --build`.
+Or with Docker (app + job worker + Postgres + MinIO for S3-style storage): `docker compose up --build`.
 
 To run the tests against Postgres: `PITCHSIGHT_TEST_DB_URL=postgresql+psycopg://user@host/pitchsight_test pytest`
 (the database is wiped; its name must contain "test"). CI (`.github/workflows/ci.yml`) runs pytest on
@@ -50,6 +50,8 @@ code changes needed. Copy `soccer.yaml` to start a new sport.
 | `PITCHSIGHT_MAX_UPLOAD_GB` | `20` | upload size cap |
 | `PITCHSIGHT_CLIP_PRE_S` / `_POST_S` | `5` / `3` | clip padding in seconds |
 | `PITCHSIGHT_MAX_REEL_EVENTS` | `300` | most events allowed in one exported reel |
+| `PITCHSIGHT_JOBS` | `inline` | `queue`: jobs go in the database and `python -m app.worker` processes run them (survive restarts, retry, scale) |
+| `PITCHSIGHT_JOB_LEASE_S` / `_MAX_ATTEMPTS` | `600` / `3` | a job whose worker stops heartbeating this long is retried, up to this many times |
 | `PITCHSIGHT_STORAGE` | `local` | `s3` keeps videos, proxies and reels in a bucket (local disk becomes a cache) |
 | `PITCHSIGHT_S3_BUCKET` / `_PREFIX` / `_ENDPOINT` / `_REGION` | | bucket settings; `_ENDPOINT` for Cloudflare R2 or MinIO. Credentials: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` |
 | `PITCHSIGHT_PROXY` | `auto` | browser playback proxy: `auto` (only when needed), `always`, `never` |

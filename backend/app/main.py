@@ -17,6 +17,10 @@ async def lifespan(app: FastAPI):
     upgrade_db()
 
     # In-process background jobs die with the server; don't leave matches stuck in 'processing'.
+    # (With a job queue, workers own that state and recover lost jobs themselves.)
+    if config.JOBS_MODE == "queue":
+        yield
+        return
     with SessionLocal() as db:
         db.execute(
             update(models.Match)

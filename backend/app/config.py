@@ -35,3 +35,9 @@ SECURE_COOKIES = os.environ.get("PITCHSIGHT_SECURE_COOKIES", "false").lower() ==
 # Browser playback proxy: "auto" transcodes only when the original won't play smoothly
 # (see proxy.needs_proxy), "always" or "never" force it.
 PROXY_MODE = os.environ.get("PITCHSIGHT_PROXY", "auto")
+
+# Background jobs. "inline": run inside the API process (dev, tests; lost on restart).
+# "queue": stored in the database and run by `python -m app.worker` processes.
+JOBS_MODE = os.environ.get("PITCHSIGHT_JOBS", "inline")
+JOB_LEASE_S = float(os.environ.get("PITCHSIGHT_JOB_LEASE_S", "600"))  # no heartbeat for this long: worker died
+JOB_MAX_ATTEMPTS = int(os.environ.get("PITCHSIGHT_JOB_MAX_ATTEMPTS", "3"))
