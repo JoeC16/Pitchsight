@@ -46,6 +46,8 @@ backend/app/
   pitch.py                pitch geometry from the pack, homography calibration, zone/side lookup
   evaluation.py           precision/recall vs verified spans or a ground-truth CSV
   evaluate.py             python -m app.evaluate (CLI for the above)
+  dataset.py              many tagged games: manifest, import, grouped split, batch run + evaluate
+                          python -m app.dataset import|split|run|evaluate MANIFEST ...
   tags/                   import other tools' tags (Sportscode/Nacsport XML, CSV) via a mapping YAML:
                           python -m app.tags inspect FILE | convert FILE --mapping M.yaml -o truth.csv
   routers/                auth, sports, matches (upload/video/events/summary/reels), events, reels

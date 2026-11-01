@@ -81,6 +81,7 @@ def evaluate(pred: list[Item], truth: list[Item], spans: list[Span] | None = Non
         row["mean_offset_s"] = round(sum(abs(p.t - g.t) for p, g in d["pairs"]) / tp, 2) if tp else None
         with_team = [(p, g) for p, g in d["pairs"] if g.team]
         row["team_agreement"] = _ratio(sum(p.team == g.team for p, g in with_team), len(with_team))
+        row["team_n"] = len(with_team)
         types[t] = row
 
         attr: dict[str, list[int]] = defaultdict(lambda: [0, 0])  # attribute -> [correct, total]
@@ -153,3 +154,33 @@ def verified_truth(db, match) -> tuple[list[Item], list[Span]]:
              db.scalars(select(VerifiedSpan).where(VerifiedSpan.match_id == match.id).order_by(VerifiedSpan.t_start))]
     events = db.scalars(select(Event).where(Event.match_id == match.id, Event.reviewed.is_(True))).all()
     return [Item(type=e.type, t=e.t_start, team=e.team, attributes=e.attributes or {}) for e in events], spans
+
+
+def aggregate(results: list[dict]) -> dict:
+    """Combine evaluate() results from many games: counts are summed, then ratios recomputed
+    (micro-averaging, so big games weigh more than small ones)."""
+    types: dict[str, list[int]] = defaultdict(lambda: [0, 0, 0, 0, 0])  # tp fp fn team_ok team_n
+    attrs: dict[str, dict[str, list[int]]] = defaultdict(lambda: defaultdict(lambda: [0, 0]))
+    for r in results:
+        for t, row in r["types"].items():
+            agg = types[t]
+            agg[0] += row["tp"]; agg[1] += row["fp"]; agg[2] += row["fn"]  # noqa: E702
+            if row.get("team_agreement") is not None:
+                n = row.get("team_n", row["tp"])
+                agg[3] += round(row["team_agreement"] * n); agg[4] += n  # noqa: E702
+        for t, by_attr in r.get("attributes", {}).items():
+            for k, a in by_attr.items():
+                attrs[t][k][0] += a["correct"]; attrs[t][k][1] += a["total"]  # noqa: E702
+    out_types = {}
+    for t, (tp, fp, fn, ok, n) in sorted(types.items()):
+        out_types[t] = {**_scores(tp, fp, fn), "team_agreement": _ratio(ok, n), "team_n": n}
+    tp, fp, fn = (sum(v[i] for v in types.values()) for i in range(3))
+    return {
+        "games": len(results),
+        "tolerance_s": results[0]["tolerance_s"] if results else None,
+        "checked_seconds": None,
+        "overall": _scores(tp, fp, fn),
+        "types": out_types,
+        "attributes": {t: {k: {"correct": c, "total": n, "accuracy": _ratio(c, n)} for k, (c, n) in sorted(a.items())}
+                       for t, a in sorted(attrs.items())},
+    }
