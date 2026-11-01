@@ -16,7 +16,8 @@ services:
   # S3 emulator (moto) standing in for AWS S3 / Cloudflare R2. In memory: restarting it loses the
   # files, so use a real bucket for anything you want to keep.
   s3:
-    build: &devbuild
+    image: pitchsight-dev:local      # built once here, reused by s3-bucket
+    build:
       context: .
       target: dev
       args: { PYTHON_IMAGE: "${PYTHON_IMAGE:-python:3.12-slim}" }
@@ -27,7 +28,8 @@ services:
       retries: 20
 
   s3-bucket:
-    build: *devbuild
+    image: pitchsight-dev:local
+    pull_policy: never
     environment:
       AWS_ACCESS_KEY_ID: dev
       AWS_SECRET_ACCESS_KEY: dev
@@ -38,7 +40,8 @@ services:
       s3: { condition: service_healthy }
 
   app:
-    build: &build
+    image: pitchsight:local          # built once here, reused by worker
+    build:
       context: .
       target: app
       args: { PYTHON_IMAGE: "${PYTHON_IMAGE:-python:3.12-slim}" }
@@ -61,7 +64,8 @@ services:
   # Runs processing, proxy and reel jobs. Its own disk on purpose: like a separate machine, it
   # gets videos from the bucket. Scale with `docker compose up --scale worker=3`.
   worker:
-    build: *build
+    image: pitchsight:local
+    pull_policy: never
     environment: *env
     command: ["python", "-m", "app.worker"]
     healthcheck: { disable: true }

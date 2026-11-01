@@ -32,8 +32,8 @@ CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-
 # Development extras (pytest, moto's S3 emulator). Not in the production image.
 FROM base AS dev
 USER root
-COPY backend/requirements-dev.txt backend/requirements-dev.txt
-RUN pip install -r backend/requirements-dev.txt
+COPY backend/requirements-dev.txt /app/backend/requirements-dev.txt
+RUN pip install -r /app/backend/requirements-dev.txt
 USER pitchsight
 
 # Production image: the default (last) stage.
