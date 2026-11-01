@@ -1,0 +1,22 @@
+sport: gaa_football
+time_offset_s: 0
+teams:
+  home: ["St Marys"]
+  away: [Ballyboden]
+ignore: ["Sub", "Throw In"]
+events:
+  - match: {code: "Kickout*"}
+    type: kickout
+    attributes:
+      outcome: {from_label: Outcome, map: {"Won Clean": retained_clean, "Won Break": retained_break, "Lost Clean": lost_clean, "Lost Break": lost_break}}
+      length: {from_label: Length, map: {Short: short, Medium: medium, Long: long}}
+  - match: {code: "Turnover Lost*"}
+    type: turnover
+    team_means: lost
+    attributes:
+      zone: {from_label: Zone, map: {Defence: own_third, Middle: middle_third, Attack: attacking_third}}
+  - match: {code: "Shot*"}
+    type: shot
+    attributes:
+      outcome: {from_label: Result, map: {Goal: goal, Point: point, Wide: wide, Short: short, Saved: saved}}
+      source: {from_label: Type, map: {"From Play": from_play, Free: free}}

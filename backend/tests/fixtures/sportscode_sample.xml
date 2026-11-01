@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<file>
+  <SESSION_INFO><start_time>2026-10-12 14:00:00</start_time></SESSION_INFO>
+  <ALL_INSTANCES>
+    <instance><ID>1</ID><start>2.0</start><end>3.0</end><code>Throw In</code></instance>
+    <instance><ID>2</ID><start>62.5</start><end>70.0</end><code>Kickout St Marys</code>
+      <label><group>Outcome</group><text>Won Clean</text></label>
+      <label><group>Length</group><text>Long</text></label>
+    </instance>
+    <instance><ID>3</ID><start>131.4</start><end>134.0</end><code>Turnover Lost Ballyboden</code>
+      <label><group>Zone</group><text>Middle</text></label>
+    </instance>
+    <instance><ID>4</ID><start>140.2</start><end>143.0</end><code>Shot Ballyboden</code>
+      <label><group>Result</group><text>Point</text></label>
+      <label><group>Type</group><text>From Play</text></label>
+    </instance>
+    <instance><ID>5</ID><start>210.0</start><end>213.0</end><code>Shot St Marys</code>
+      <label><group>Result</group><text>Hit Crossbar</text></label>
+    </instance>
+    <instance><ID>6</ID><start>300.0</start><end>301.0</end><code>Sub</code></instance>
+    <instance><ID>7</ID><start>400.0</start><end>401.0</end><code>Water break</code></instance>
+    <instance><ID>8</ID><start>450.0</start><end>453.0</end><code>Shot</code>
+      <label><group>Result</group><text>Wide</text></label>
+    </instance>
+  </ALL_INSTANCES>
+</file>
