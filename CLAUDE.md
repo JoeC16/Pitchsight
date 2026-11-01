@@ -43,6 +43,7 @@ backend/app/
   clips.py                ffmpeg clip cutting with on-disk cache
   reels.py                reel export job: merge windows, cut, concat
   proxy.py                needs_proxy() rules + browser playback transcode
+  storage.py              local disk or S3/R2 bucket; ensure_local() downloads into the cache, signed URLs
   pitch.py                pitch geometry from the pack, homography calibration, zone/side lookup
   evaluation.py           precision/recall vs verified spans or a ground-truth CSV
   evaluate.py             python -m app.evaluate (CLI for the above)
@@ -87,6 +88,9 @@ docs/ROADMAP.md           phased plan with exit criteria and risks
   survive a model upgrade. Confidence is stored so low-confidence items can be queued for review.
 - **The Detector protocol is the seam** between video and everything else. The runner validates
   every draft against the pack and drops invalid ones, so a buggy model can't corrupt data.
+- **Files go through `storage`.** Anything that needs a video on disk calls
+  `storage.ensure_local(path, key)`; anything finished and durable is `storage.persist()`ed. Never
+  assume the local copy exists: with `PITCHSIGHT_STORAGE=s3` local disk is only a cache.
 - **Upload is a raw streamed PUT**, not multipart, so multi-GB Veo files go straight to disk.
 - **Demo data is labelled.** The UI shows a banner whenever a match's events came from the stub.
   Never let simulated events look like real analysis, especially in anything shown to a customer.
@@ -94,8 +98,8 @@ docs/ROADMAP.md           phased plan with exit criteria and risks
 ## Not built yet (don't assume these exist)
 
 Frame decoding and player/ball detection + tracking (the model half of `pipeline/real.py`), a job queue and GPU
-worker (processing runs in-process via FastAPI BackgroundTasks), Postgres and object storage
-(sqlite + local disk), Veo import automation
+worker (processing runs in-process via FastAPI BackgroundTasks), direct browser-to-bucket uploads,
+Veo import automation
 (users download the file from Veo and upload it by hand).
 
 ## Suggested next tasks, in order

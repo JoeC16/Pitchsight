@@ -5,11 +5,11 @@ from urllib.parse import unquote
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
-from .. import analytics, config, evaluation, pitch, queries, reels, schemas, taxonomy
+from .. import analytics, config, evaluation, pitch, queries, reels, schemas, storage, taxonomy
 from ..auth import CurrentUser
 from ..db import get_db
 from ..models import DetectionRun, Event, Match, Reel, User, VerifiedSpan
@@ -54,6 +54,7 @@ def delete_match(match_id: int, user: CurrentUser, db: Session = Depends(get_db)
     for path in (match.video_path, match.proxy_path, match.video_path and f"{match.video_path}.tracking.json"):
         if path:
             Path(path).unlink(missing_ok=True)
+    storage.remove(match.video_key, match.proxy_key, *(r.key for r in match.reels))
     for directory in (config.CLIP_DIR, config.REEL_DIR):
         for f in directory.glob(f"m{match.id}_*.mp4"):
             f.unlink(missing_ok=True)
@@ -98,9 +99,11 @@ async def upload_video(
         raise
 
     match.video_path, match.status, match.error = str(dest), "uploaded", None
-    # A proxy left from an earlier upload belongs to the old file.
+    # Stored copies and a proxy left from an earlier upload belong to the old file.
     if match.proxy_path:
         Path(match.proxy_path).unlink(missing_ok=True)
+    storage.remove(match.video_key, match.proxy_key)
+    match.video_key = match.proxy_key = None
     match.proxy_path, match.proxy_status, match.proxy_reason, match.proxy_progress = None, "none", None, 0.0
     db.commit()
     background.add_task(process_match, match.id)
@@ -111,7 +114,11 @@ async def upload_video(
 def get_video(match_id: int, user: CurrentUser, db: Session = Depends(get_db)):
     """The video for playback: the browser-friendly proxy once it's built, else the original."""
     match = _get_match(db, match_id, user)
-    if match.proxy_status == "ready" and match.proxy_path and Path(match.proxy_path).exists():
+    proxy_ready = match.proxy_status == "ready"
+    # With a bucket, the browser streams straight from it (signed URL; range requests work).
+    if url := storage.signed_url(match.proxy_key if proxy_ready else match.video_key):
+        return RedirectResponse(url, status_code=307)
+    if proxy_ready and match.proxy_path and Path(match.proxy_path).exists():
         return FileResponse(match.proxy_path, media_type="video/mp4")
     if not match.video_path or not Path(match.video_path).exists():
         raise HTTPException(404, "No video")
@@ -259,11 +266,13 @@ def evaluate_match(match_id: int, user: CurrentUser, run: int | None = None, tol
 def frame(match_id: int, user: CurrentUser, t: float = 0.0, db: Session = Depends(get_db)):
     """One full-resolution JPEG frame of the original video at `t` seconds (for calibration)."""
     match = _get_match(db, match_id, user)
-    if not match.video_path or not Path(match.video_path).exists():
-        raise HTTPException(404, "No video")
+    try:
+        source = storage.ensure_local(match.video_path, match.video_key)
+    except FileNotFoundError:
+        raise HTTPException(404, "No video") from None
     t = max(0.0, min(t, (match.duration_s or t + 1) - 0.5))
     result = subprocess.run(
-        ["ffmpeg", "-loglevel", "error", "-ss", f"{t:.3f}", "-i", match.video_path,
+        ["ffmpeg", "-loglevel", "error", "-ss", f"{t:.3f}", "-i", str(source),
          "-frames:v", "1", "-q:v", "3", "-f", "image2pipe", "-vcodec", "mjpeg", "-"],
         capture_output=True, timeout=60,
     )

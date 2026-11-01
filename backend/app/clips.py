@@ -3,7 +3,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from . import config
+from . import config, storage
 from .models import Event, Match
 
 
@@ -32,6 +32,10 @@ def get_or_cut_window(match: Match, start: float, end: float) -> Path:
     """Cut [start, end] of the match video to an mp4, or return the cached copy."""
     if not match.video_path:
         raise ClipError("Match has no video")
+    try:
+        source = storage.ensure_local(match.video_path, match.video_key)
+    except FileNotFoundError as exc:
+        raise ClipError(str(exc)) from None
     dest = clip_path(match, start, end)
     if dest.exists():
         return dest
@@ -43,7 +47,7 @@ def get_or_cut_window(match: Match, start: float, end: float) -> Path:
     # Every clip is encoded with the same settings, so reels can join them without re-encoding.
     cmd = [
         "ffmpeg", "-y", "-loglevel", "error",
-        "-ss", f"{start:.3f}", "-i", match.video_path, "-t", f"{end - start:.3f}",
+        "-ss", f"{start:.3f}", "-i", str(source), "-t", f"{end - start:.3f}",
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
         "-c:a", "aac", "-movflags", "+faststart", str(tmp),
     ]

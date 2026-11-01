@@ -10,7 +10,7 @@ from pathlib import Path
 
 from sqlalchemy import select
 
-from .. import config, taxonomy
+from .. import config, storage, taxonomy
 from ..proxy import build_proxy, needs_proxy
 from ..db import SessionLocal
 from ..models import DetectionRun, Event, Match
@@ -33,7 +33,10 @@ def process_match(match_id: int) -> None:
         match.status, match.progress, match.error = "processing", 0.0, None
         db.commit()
 
-        video = Path(match.video_path)
+        if storage.remote() is not None and not match.video_key:
+            match.video_key = storage.persist(Path(match.video_path), f"videos/m{match.id}{Path(match.video_path).suffix}")
+            db.commit()
+        video = storage.ensure_local(match.video_path, match.video_key)
         info = probe(video)
         match.duration_s, match.fps = info.duration_s, info.fps
         match.width, match.height, match.video_codec = info.width, info.height, info.video_codec

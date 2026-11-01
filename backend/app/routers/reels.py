@@ -1,10 +1,10 @@
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
-from .. import schemas
+from .. import schemas, storage
 from ..auth import CurrentUser
 from ..db import get_db
 from ..models import Reel, User
@@ -27,11 +27,13 @@ def get_reel(reel_id: int, user: CurrentUser, db: Session = Depends(get_db)):
 @router.get("/{reel_id}/download")
 def download_reel(reel_id: int, user: CurrentUser, db: Session = Depends(get_db)):
     reel = _get_reel(db, reel_id, user)
-    if reel.status != "ready" or not reel.path or not Path(reel.path).exists():
+    if reel.status != "ready" or not (reel.key or (reel.path and Path(reel.path).exists())):
         raise HTTPException(409, f"Reel is '{reel.status}', not ready to download")
     # The demo banner doesn't travel with a downloaded file, so label simulated content in its name.
     demo = "_DEMO-simulated-events" if reel.match.detector == "stub" else ""
-    name = f"{reel.match.title}_reel_{reel.id}{demo}.mp4".replace("/", "-")
+    name = f"{reel.match.title}_reel_{reel.id}{demo}.mp4".replace("/", "-").replace('"', "")
+    if url := storage.signed_url(reel.key, filename=name, content_type="video/mp4"):
+        return RedirectResponse(url, status_code=307)
     return FileResponse(reel.path, media_type="video/mp4", filename=name)
 
 
@@ -42,5 +44,6 @@ def delete_reel(reel_id: int, user: CurrentUser, db: Session = Depends(get_db)):
         raise HTTPException(409, "Reel is still being built")
     if reel.path:
         Path(reel.path).unlink(missing_ok=True)
+    storage.remove(reel.key)
     db.delete(reel)
     db.commit()

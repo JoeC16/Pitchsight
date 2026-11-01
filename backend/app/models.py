@@ -59,7 +59,8 @@ class Match(Base):
     away_team: Mapped[str] = mapped_column(String(120))
     played_on: Mapped[date | None] = mapped_column(Date, nullable=True)
 
-    video_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    video_path: Mapped[str | None] = mapped_column(String(500), nullable=True)  # local copy (or cache)
+    video_key: Mapped[str | None] = mapped_column(String(500), nullable=True)   # object key, if in a bucket
     # created -> uploaded -> processing -> ready | failed
     status: Mapped[str] = mapped_column(String(20), default="created")
     progress: Mapped[float] = mapped_column(Float, default=0.0)
@@ -75,6 +76,7 @@ class Match(Base):
     proxy_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)  # why one was needed
     proxy_progress: Mapped[float] = mapped_column(Float, default=0.0, server_default="0")
     proxy_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    proxy_key: Mapped[str | None] = mapped_column(String(500), nullable=True)
     # Pitch calibration + direction of play: {length, width, home_attacks_first, frame_t,
     # points: [{landmark, u, v}], H, H_inv, rms_error_m, ...}. See pitch.py.
     pitch_setup: Mapped[dict | None] = mapped_column(JSON, nullable=True)
@@ -128,6 +130,7 @@ class Reel(Base):
     segment_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     duration_s: Mapped[float | None] = mapped_column(Float, nullable=True)
     path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    key: Mapped[str | None] = mapped_column(String(500), nullable=True)  # object key, if in a bucket
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     match: Mapped[Match] = relationship(back_populates="reels")

@@ -6,7 +6,7 @@ from pathlib import Path
 
 from sqlalchemy import select
 
-from . import clips, config
+from . import clips, config, storage
 from .db import SessionLocal
 from .models import Event, Match, Reel
 
@@ -71,6 +71,7 @@ def build_reel(reel_id: int) -> None:
         config.REEL_DIR.mkdir(parents=True, exist_ok=True)
         dest = reel_path(reel)
         concat(parts, dest)
+        reel.key = storage.persist(dest, f"reels/{dest.name}")
         reel.path, reel.segment_count = str(dest), len(windows)
         reel.duration_s = round(sum(e - s for s, e in windows), 2)
         reel.status, reel.progress = "ready", 1.0

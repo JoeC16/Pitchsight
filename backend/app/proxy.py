@@ -6,7 +6,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from . import config
+from . import config, storage
 from .db import SessionLocal
 from .models import Match
 from .pipeline.interfaces import VideoInfo
@@ -61,7 +61,7 @@ def build_proxy(match_id: int) -> None:
         tmp = dest.with_suffix(".part.mp4")
         cmd = [
             "ffmpeg", "-y", "-loglevel", "error", "-nostats", "-progress", "pipe:1",
-            "-i", match.video_path, "-map", "0:v:0", "-map", "0:a:0?",
+            "-i", str(storage.ensure_local(match.video_path, match.video_key)), "-map", "0:v:0", "-map", "0:a:0?",
             "-vf", "scale=w='min(1920,iw)':h='min(1080,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2",
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p",
             "-force_key_frames", "expr:gte(t,n_forced*2)",  # keyframe every 2s: fast seeking
@@ -83,6 +83,7 @@ def build_proxy(match_id: int) -> None:
             tmp.unlink(missing_ok=True)
             raise RuntimeError(f"ffmpeg failed: {stderr.strip()[:300]}")
         tmp.replace(dest)
+        match.proxy_key = storage.persist(dest, f"proxies/m{match.id}.mp4")
         match.proxy_path, match.proxy_status, match.proxy_progress = str(dest), "ready", 1.0
         db.commit()
     except Exception:  # noqa: BLE001 - playback falls back to the original

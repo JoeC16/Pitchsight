@@ -13,6 +13,27 @@ services:
       interval: 3s
       retries: 20
 
+  # S3-compatible storage, standing in for AWS S3 / Cloudflare R2. Console: http://localhost:9001
+  minio:
+    image: ${MINIO_IMAGE:-minio/minio:RELEASE.2025-04-22T22-12-26Z}
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: pitchsight
+      MINIO_ROOT_PASSWORD: pitchsight-dev-only
+    volumes: [miniodata:/data]
+    ports: ["9000:9000", "9001:9001"]
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 3s
+      retries: 20
+
+  minio-bucket:
+    image: ${MINIO_MC_IMAGE:-minio/mc:RELEASE.2025-04-16T18-13-26Z}
+    depends_on:
+      minio: { condition: service_healthy }
+    entrypoint: >
+      sh -c "mc alias set local http://minio:9000 pitchsight pitchsight-dev-only && mc mb -p local/pitchsight"
+
   app:
     build:
       context: .
@@ -20,11 +41,19 @@ services:
     environment:
       PITCHSIGHT_DB_URL: postgresql+psycopg://pitchsight:pitchsight@db:5432/pitchsight
       PITCHSIGHT_DETECTOR: ${PITCHSIGHT_DETECTOR:-stub}
+      PITCHSIGHT_STORAGE: s3
+      PITCHSIGHT_S3_BUCKET: pitchsight
+      PITCHSIGHT_S3_ENDPOINT: http://minio:9000
+      AWS_ACCESS_KEY_ID: pitchsight
+      AWS_SECRET_ACCESS_KEY: pitchsight-dev-only
+      AWS_DEFAULT_REGION: us-east-1
     volumes: [appdata:/data]
     ports: ["8000:8000"]
     depends_on:
       db: { condition: service_healthy }
+      minio-bucket: { condition: service_completed_successfully }
 
 volumes:
   pgdata:
   appdata:
+  miniodata:
