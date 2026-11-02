@@ -56,14 +56,19 @@ backend/app/
   pipeline/
     interfaces.py         Detector protocol, EventDraft, VideoInfo   <- the key seam
     stub.py               SYNTHETIC events for development (origin="stub")
-    real.py               real pipeline: tracking -> rules (detection/tracking model not built yet)
+    real.py               real pipeline: video (or supplied tracking) -> rules
+    video.py              ffmpeg frame decoding to numpy
+    detection.py          FrameDetector seam + registry (only a synthetic-test detector so far)
+    track.py              simple pitch-space tracker (stand-in for ByteTrack)
+    video_pipeline.py     frames -> detections -> pitch coords -> tracks -> teams -> Tracking
     tracking.py           tracking data format (players + ball in pitch metres over time)
     possession.py         possession timeline from tracking
     rules.py              kickouts, shots, turnovers with confidence (thresholds in pack `detection:`)
     teams.py              kit-colour team assignment
     runner.py             process_match(): probe -> detect -> validate -> store
     probe.py              ffprobe wrapper
-backend/tests/            pytest + TestClient; test_api.py covers the whole API
+backend/tests/            pytest + TestClient; test_api.py covers the whole API; synthetic_video.py renders
+                          test matches with known events (tests/test_video_pipeline.py)
 frontend/                 plain HTML/CSS/JS, no build step (index.html, app.js, style.css)
 docs/ARCHITECTURE.md      pipeline stages, data model, API
 docs/ROADMAP.md           phased plan with exit criteria and risks
@@ -103,7 +108,7 @@ docs/ROADMAP.md           phased plan with exit criteria and risks
 
 ## Not built yet (don't assume these exist)
 
-Frame decoding and player/ball detection + tracking (the model half of `pipeline/real.py`), a GPU
+A real player/ball detection model (plugs into `pipeline/detection.py`), a production tracker, a GPU
 provider for workers (Modal/RunPod), worker cache eviction,
 deployment to a host, Veo import automation
 (users download the file from Veo and upload it by hand).

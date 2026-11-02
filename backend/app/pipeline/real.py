@@ -2,24 +2,28 @@
 
 Stages (see docs/ARCHITECTURE.md):
 
-  1. Decode      frames at a reduced rate                         NOT BUILT (needs footage + model)
+  1. Decode      frames at a reduced rate                                    built: video.py
   2. Calibrate   pixels -> pitch metres, from the coach's pitch setup        built: pitch.py
-  3. Detect      players, goalkeepers/referees, ball (e.g. RF-DETR)          NOT BUILT
-  4. Track       stable ids across frames (e.g. ByteTrack)                   NOT BUILT
+  3. Detect      players, goalkeepers/referees, ball (e.g. RF-DETR)          seam built: detection.py;
+                 no real model yet (only a detector for synthetic test videos)
+  4. Track       stable ids across frames                                    simple tracker: track.py
   5. Teams       kit-colour clustering -> home/away                          built: teams.py
   6. Possession  ball-to-player proximity + ball speed                       built: possession.py
   7. Events      kickouts, shots, turnovers with confidence                  built: rules.py
   8. Classify    trained outcome classifier (goal/point/wide/saved)          NOT BUILT (needs labels)
 
-Until stages 1, 3 and 4 exist, tracking can be supplied as `<video file>.tracking.json`
-(format in tracking.py), e.g. from an external tracker. Heavy dependencies (torch etc.) belong
+video_pipeline.py chains 1-5 into the Tracking the rules consume. Tracking can also be supplied
+as `<video file>.tracking.json` (format in tracking.py), e.g. from an external tracker. Heavy dependencies (torch etc.) belong
 in a separate GPU worker image, not in requirements.txt.
 """
 from pathlib import Path
 
+from .. import config
 from . import rules
+from .detection import DetectorUnavailable, get_frame_detector
 from .interfaces import EventDraft, MatchContext, ProgressFn, VideoInfo
 from .tracking import load_json
+from .video_pipeline import build_tracking
 
 
 class DetectionUnavailable(RuntimeError):
@@ -42,12 +46,19 @@ class TrackingDetector:
         if not setup:
             raise DetectionUnavailable("Set up the pitch (calibration and direction of play) before running detection")
         tracking_file = Path(f"{video_path}.tracking.json")
-        if not tracking_file.exists():
-            raise DetectionUnavailable(
-                "Player and ball detection isn't built yet, and no tracking file was supplied "
-                f"({tracking_file.name}). Use PITCHSIGHT_DETECTOR=stub for demo data.")
-        tracking = load_json(tracking_file)
-        progress(0.5)
+        if tracking_file.exists():  # supplied by an external tracker
+            tracking = load_json(tracking_file)
+        else:
+            try:
+                frame_detector = get_frame_detector(config.FRAME_DETECTOR)
+            except DetectorUnavailable as exc:
+                raise DetectionUnavailable(str(exc)) from None
+            try:
+                tracking = build_tracking(video_path, info, setup, frame_detector, fps=config.DETECT_FPS,
+                                          progress=lambda p: progress(0.9 * p))
+            except ValueError as exc:
+                raise DetectionUnavailable(str(exc)) from None
+        progress(0.9)
         drafts = rules.detect_events(tracking, pack, setup,
                                      period_finder(context.period_starts, info.duration_s, pack["periods"]))
         progress(1.0)

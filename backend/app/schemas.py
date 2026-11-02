@@ -203,4 +203,7 @@ class PitchSetupIn(BaseModel):
     width: float | None = None
     home_attacks_first: Literal["left", "right"]  # as the camera sees it, in period 1
     frame_t: float = Field(default=0, ge=0)        # video time of the frame the points were clicked on
+    home_colour: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")  # outfield kit, e.g. "#c8102e"
+    away_colour: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
+    second_half_s: float | None = Field(default=None, gt=0)  # video time the 2nd half kicks off
     points: list[PitchPoint] = Field(min_length=4)

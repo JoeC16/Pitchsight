@@ -203,3 +203,7 @@ def test_review_queue_puts_unknown_confidence_first(client, match):
 
 def test_health(anon):
     assert anon.get("/api/health").json() == {"status": "ok"}
+
+
+def test_client_config(anon):
+    assert anon.get("/api/config").json() == {"direct_uploads": False, "signup": True}

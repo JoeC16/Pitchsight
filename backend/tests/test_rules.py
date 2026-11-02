@@ -21,16 +21,17 @@ CROWD = [Player(90 + i, "home" if i % 2 else "away", 130.0 - i, 84.0) for i in r
 
 
 class Scene:
-    def __init__(self):
+    def __init__(self, crowd=CROWD):
         self.frames: list[Frame] = []
         self.t = 0.0
+        self.crowd = crowd
 
     def _seg(self, dur, a, b, carrier=None, extra=()):
         n = int(round(dur * FPS))
         for k in range(n):
             f = k / n
             ball = (a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f)
-            players = list(CROWD) + list(extra)
+            players = list(self.crowd) + list(extra)
             if carrier:
                 team, pid = carrier
                 players.append(Player(pid, team, ball[0] + 0.5, ball[1]))
@@ -159,7 +160,7 @@ def test_tracking_detector_needs_setup_and_tracking(tmp_path):
     with pytest.raises(DetectionUnavailable, match="pitch"):
         TrackingDetector().detect(video, info, GAA, lambda p: None, MatchContext("gaa_football"))
     ctx = MatchContext("gaa_football", pitch_setup=SETUP)
-    with pytest.raises(DetectionUnavailable, match="isn't built yet"):
+    with pytest.raises(DetectionUnavailable, match="No player/ball detection model"):
         TrackingDetector().detect(video, info, GAA, lambda p: None, ctx)
     s = Scene().carry("home", 1, (60, 40), (70, 40)).fly((70, 40), (80, 50), 0.6).carry("away", 2, (80, 50), (75, 50))
     dump_json(s.tracking(), tmp_path / "m.mp4.tracking.json")

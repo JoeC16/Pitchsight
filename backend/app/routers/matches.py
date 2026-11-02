@@ -325,6 +325,7 @@ def put_pitch(match_id: int, body: schemas.PitchSetupIn, user: CurrentUser, db: 
         raise HTTPException(422, str(exc)) from None
     match.pitch_setup = {
         "length": L, "width": W, "home_attacks_first": body.home_attacks_first, "frame_t": body.frame_t,
+        "home_colour": body.home_colour, "away_colour": body.away_colour, "second_half_s": body.second_half_s,
         "points": [p.model_dump() for p in body.points], **fit,
     }
     db.commit()

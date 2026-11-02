@@ -24,9 +24,13 @@ def hex_rgb(h: str) -> tuple[int, int, int]:
 
 
 def assign_teams(track_colours: dict[int, tuple[int, int, int]], home_rgb, away_rgb,
-                 max_spread: float = 25.0, iters: int = 20) -> dict[int, str | None]:
+                 max_spread: float = 70.0, margin: float = 0.6, iters: int = 20) -> dict[int, str | None]:
     """{track id: 'home' | 'away' | None}. Two-cluster k-means in Lab, seeded from the declared
-    kits; tracks further than `max_spread` (Lab units) from their cluster centre are unassigned."""
+    kits. A track gets the nearer team when it's within `max_spread` (Lab units) of it AND clearly
+    nearer it than the other (distance ratio below `margin`). Kits look darker or washed out far
+    from the camera and in bad light, so closeness is relative; keepers and referees, far from
+    both kits, stay unassigned. Limit: a keeper whose kit is close to an outfield kit (orange next
+    to red) is assigned to that team; telling keepers apart needs a detector class for them."""
     if not track_colours:
         return {}
     ids = list(track_colours)
@@ -36,8 +40,8 @@ def assign_teams(track_colours: dict[int, tuple[int, int, int]], home_rgb, away_
         d = np.linalg.norm(X[:, None, :] - centres[None, :, :], axis=2)
         label = d.argmin(axis=1)
         # Robust update: only points near a centre move it, so keepers/refs don't drag it.
-        new = np.array([X[(label == k) & (d[:, k] <= max_spread * 1.5)].mean(axis=0)
-                        if ((label == k) & (d[:, k] <= max_spread * 1.5)).any() else centres[k] for k in (0, 1)])
+        near = [(label == k) & (d[:, k] <= max_spread) for k in (0, 1)]
+        new = np.array([X[near[k]].mean(axis=0) if near[k].any() else centres[k] for k in (0, 1)])
         if np.allclose(new, centres):
             break
         centres = new
@@ -45,5 +49,6 @@ def assign_teams(track_colours: dict[int, tuple[int, int, int]], home_rgb, away_
     out = {}
     for i, row in zip(ids, d):
         k = int(row.argmin())
-        out[i] = ("home", "away")[k] if row[k] <= max_spread else None
+        clear = row[k] <= margin * row[1 - k]
+        out[i] = ("home", "away")[k] if row[k] <= max_spread and clear else None
     return out

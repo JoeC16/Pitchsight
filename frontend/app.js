@@ -54,7 +54,7 @@ async function api(path, { method = 'GET', body } = {}) {
 // ---------- state ----------
 const freshFilters = () => ({ types: new Set(), team: '', period: '', minConf: 0, attrs: {} });
 const S = {
-  me: null, packs: {}, matches: [], match: null, pack: null,
+  me: null, config: null, packs: {}, matches: [], match: null, pack: null,
   events: [], shown: [], shownIds: new Set(), summary: null,
   filters: freshFilters(), reel: null, review: null, poll: null, exp: null,
 };
@@ -451,6 +451,8 @@ async function openPitchSetup() {
   const st = {
     length: info.length, width: info.width, attack: setup ? setup.home_attacks_first : 'right',
     t: setup ? setup.frame_t : (video() ? Math.round(video().currentTime * 10) / 10 : 0),
+    homeColour: (setup && setup.home_colour) || '#c8102e', awayColour: (setup && setup.away_colour) || '#1f4fbf',
+    secondHalf: (setup && setup.second_half_s) || '',
     points: Object.fromEntries((setup ? setup.points : []).map((p) => [p.landmark, { u: p.u, v: p.v }])),
     fit: setup, selected: null,
   };
@@ -534,6 +536,7 @@ async function openPitchSetup() {
     try {
       st.fit = await api(`/matches/${m.id}/pitch`, { method: 'PUT', body: {
         length: st.length, width: st.width, home_attacks_first: st.attack, frame_t: st.t,
+        home_colour: st.homeColour, away_colour: st.awayColour, second_half_s: st.secondHalf ? Number(st.secondHalf) : null,
         points: Object.entries(st.points).map(([landmark, p]) => ({ landmark, u: p.u, v: p.v })) } });
       S.match = await api('/matches/' + m.id);
       renderHead(); drawList(); draw();
@@ -549,6 +552,11 @@ async function openPitchSetup() {
           field(`Length (m, ${info.limits.length.min}-${info.limits.length.max})`, h('input', { type: 'number', value: st.length, onchange: (e) => { st.length = Number(e.target.value); dimsChanged(); } })),
           field(`Width (m, ${info.limits.width.min}-${info.limits.width.max})`, h('input', { type: 'number', value: st.width, onchange: (e) => { st.width = Number(e.target.value); dimsChanged(); } }))),
         field(`${m.home_team} attack in the 1st half`, select([['right', 'the right-hand end'], ['left', 'the left-hand end']], st.attack, (v) => { st.attack = v; })),
+        h('div', { class: 'row' },
+          field(`${m.home_team} kit`, h('input', { type: 'color', value: st.homeColour, oninput: (e) => { st.homeColour = e.target.value; } })),
+          field(`${m.away_team} kit`, h('input', { type: 'color', value: st.awayColour, oninput: (e) => { st.awayColour = e.target.value; } }))),
+        field('2nd half kicks off at (seconds into video)', h('input', { type: 'number', step: '1', min: '1', value: st.secondHalf,
+          placeholder: 'e.g. 2460', oninput: (e) => { st.secondHalf = e.target.value; } })),
         field('Frame (seconds into video)', h('div', { class: 'row' },
           h('input', { type: 'number', step: '0.1', value: st.t, onchange: (e) => { st.t = Number(e.target.value); } }),
           h('button', { class: 'btn small', onclick: loadFrame }, 'Load frame'))),
@@ -856,13 +864,9 @@ function putVideo(id, file, onProgress) {
 // Upload straight to the bucket in parts when the server uses bucket storage (the API never
 // handles the bytes); otherwise fall back to streaming the file to the API with PUT.
 async function uploadVideo(id, file, onProgress) {
-  let up;
-  try {
-    up = await api(`/matches/${id}/uploads`, { method: 'POST', body: { filename: file.name, size: file.size } });
-  } catch (e) {
-    if (/use PUT/.test(e.message)) return putVideo(id, file, onProgress);
-    throw e;
-  }
+  if (!S.config) S.config = await api('/config');
+  if (!S.config.direct_uploads) return putVideo(id, file, onProgress);
+  const up = await api(`/matches/${id}/uploads`, { method: 'POST', body: { filename: file.name, size: file.size } });
   const base = `/matches/${id}/uploads/${up.upload_id}`, fn = encodeURIComponent(file.name);
   const todo = Array.from({ length: up.part_count }, (_, i) => i + 1);
   const signed = {}, etags = {}, sent = {};

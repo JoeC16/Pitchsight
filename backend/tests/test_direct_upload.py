@@ -103,6 +103,10 @@ def test_other_club_cannot_upload(client, other_club, match, s3):
         assert other_club.request(method, path, json=body).status_code == 404
 
 
+def test_config_advertises_direct_uploads(anon, s3):
+    assert anon.get("/api/config").json()["direct_uploads"] is True
+
+
 def test_bucket_cors_cli(s3):
     from app.cli import main
     main(["bucket-cors", "https://app.example.com"])

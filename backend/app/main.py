@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text, update
 
-from . import config, models
+from . import config, models, storage
 from .db import SessionLocal
 from .migrate import upgrade_db
 from .routers import auth, events, matches, reels, sports
@@ -40,6 +40,12 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="PitchSight", lifespan=lifespan)
+
+
+@app.get("/api/config", tags=["ops"])
+def client_config() -> dict:
+    """What the web app needs to know about this deployment (no secrets)."""
+    return {"direct_uploads": storage.remote() is not None, "signup": config.ALLOW_SIGNUP}
 
 
 @app.get("/api/health", tags=["ops"])

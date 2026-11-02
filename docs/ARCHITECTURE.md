@@ -29,7 +29,7 @@ Clips and reels always cut from the original.
 Downloads of simulated (stub) content carry `DEMO-simulated-event(s)` in the filename, because
 the UI's demo banner doesn't travel with the file.
 
-## Real detection pipeline (`pipeline/real.py`; stages 2, 5, 6, 7 built, 1, 3, 4, 8 not)
+## Real detection pipeline (`pipeline/real.py`; all stages wired, no real detection model yet)
 
 1. **Decode** frames at a reduced rate.
 2. **Calibrate** the pitch. Veo uses a fixed panoramic camera, so one homography per match maps
@@ -42,11 +42,18 @@ the UI's demo banner doesn't travel with the file.
    goal area, shot = ball launched at goal) plus an action model for what tracking can't see.
 8. **Classify** attributes (outcome, zone, side, method). Emit a confidence; low confidence goes to review.
 
-Built so far: calibration (`pitch.py`), team assignment (`pipeline/teams.py`, not wired yet),
-possession (`pipeline/possession.py`), and rules (`pipeline/rules.py`, GAA thresholds in the pack's
-`detection:` section). Until detection and tracking exist, `real.py` reads
-`<video>.tracking.json` (format in `pipeline/tracking.py`), and fails with a clear message if
-the pitch isn't set up or no tracking exists. Detectors receive a `MatchContext` (calibration,
+`pipeline/video_pipeline.py` chains decoding (`video.py`), a swappable per-frame detector
+(`detection.py`, chosen by `PITCHSIGHT_FRAME_DETECTOR`), projection of feet/ball to pitch metres
+(`pitch.py`), tracking (`track.py`, a simple stand-in for ByteTrack) and kit-colour teams
+(`teams.py`, needs the kit colours from pitch setup) into the Tracking the rules consume
+(`possession.py`, `rules.py`, GAA thresholds in the pack's `detection:` section). Tracking can also be
+supplied as `<video>.tracking.json`. Pitch setup also records when the 2nd half kicks off.
+
+Tested end to end on rendered synthetic matches (`tests/synthetic_video.py`): video -> events equals
+rules-on-true-positions. The only detector today recognises those renders; a trained model
+(RF-DETR) is the missing piece, plus a stronger tracker for occlusions (players overlapping on
+camera merge into one blob) and a keeper class (a keeper's kit close to an outfield kit is
+otherwise assigned to that team). Detectors receive a `MatchContext` (calibration,
 direction of play).
 
 Hard parts: ball outcome (point vs wide vs saved) from a distant view; GAA-specific training data

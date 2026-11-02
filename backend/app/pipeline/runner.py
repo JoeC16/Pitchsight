@@ -56,7 +56,9 @@ def process_match(match_id: int) -> None:
         kept = db.scalars(select(Event).where(Event.match_id == match.id)).all()
 
         dropped, valid = 0, []
-        context = MatchContext(sport=match.sport, pitch_setup=match.pitch_setup)
+        second_half = (match.pitch_setup or {}).get("second_half_s")
+        context = MatchContext(sport=match.sport, pitch_setup=match.pitch_setup,
+                               period_starts=[0.0, second_half] if second_half else None)
         for draft in detector.detect(video, info, pack, progress, context):
             try:
                 taxonomy.validate_event(match.sport, draft.type, draft.team, draft.attributes)

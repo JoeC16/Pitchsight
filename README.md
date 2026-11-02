@@ -50,6 +50,8 @@ code changes needed. Copy `soccer.yaml` to start a new sport.
 |---|---|---|
 | `PITCHSIGHT_DATA_DIR` | `./data` | sqlite db, videos, cached clips |
 | `PITCHSIGHT_DETECTOR` | `stub` | `stub` or `real` |
+| `PITCHSIGHT_FRAME_DETECTOR` | `none` | for `real`: the per-frame player/ball model (no real one yet; `synthetic` only works on test renders) |
+| `PITCHSIGHT_DETECT_FPS` | `5` | frames per second sampled for detection |
 | `PITCHSIGHT_MAX_UPLOAD_GB` | `20` | upload size cap |
 | `PITCHSIGHT_CLIP_PRE_S` / `_POST_S` | `5` / `3` | clip padding in seconds |
 | `PITCHSIGHT_MAX_REEL_EVENTS` | `300` | most events allowed in one exported reel |
