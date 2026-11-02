@@ -853,6 +853,69 @@ function putVideo(id, file, onProgress) {
   });
 }
 
+// Upload straight to the bucket in parts when the server uses bucket storage (the API never
+// handles the bytes); otherwise fall back to streaming the file to the API with PUT.
+async function uploadVideo(id, file, onProgress) {
+  let up;
+  try {
+    up = await api(`/matches/${id}/uploads`, { method: 'POST', body: { filename: file.name, size: file.size } });
+  } catch (e) {
+    if (/use PUT/.test(e.message)) return putVideo(id, file, onProgress);
+    throw e;
+  }
+  const base = `/matches/${id}/uploads/${up.upload_id}`, fn = encodeURIComponent(file.name);
+  const todo = Array.from({ length: up.part_count }, (_, i) => i + 1);
+  const signed = {}, etags = {}, sent = {};
+  const report = () => onProgress(Object.values(sent).reduce((a, b) => a + b, 0) / file.size);
+
+  async function sign(from) { // sign the next batch of URLs, starting at part `from`
+    const batch = todo.filter((n) => n >= from && !signed[n]).slice(0, 50);
+    if (!batch.includes(from)) batch.unshift(from);
+    Object.assign(signed, (await api(`${base}/parts?filename=${fn}`, { method: 'POST', body: { part_numbers: batch } })).urls);
+  }
+  function putPart(n) {
+    const blob = file.slice((n - 1) * up.part_size, n * up.part_size);
+    return new Promise((resolve, reject) => {
+      const x = new XMLHttpRequest();
+      x.open('PUT', signed[n]);
+      x.upload.onprogress = (e) => { sent[n] = e.loaded; report(); };
+      x.onload = () => {
+        const etag = x.getResponseHeader('ETag');
+        if (x.status < 300 && etag) { sent[n] = blob.size; report(); return resolve(etag); }
+        reject(new Error(x.status < 300
+          ? 'The bucket hid the upload receipt (ETag): set its CORS rule with python -m app.cli bucket-cors'
+          : `Part ${n} failed (${x.status})`));
+      };
+      x.onerror = () => reject(new Error(`Network error on part ${n}`));
+      x.send(blob);
+    });
+  }
+  async function sendPart(n) {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        if (!signed[n]) await sign(n);
+        etags[n] = await putPart(n);
+        return;
+      } catch (e) {
+        sent[n] = 0; delete signed[n]; // a fresh URL next time, in case the old one expired
+        if (attempt >= 3) throw e;
+        await new Promise((r) => setTimeout(r, 1000 * attempt));
+      }
+    }
+  }
+  try {
+    const queue = [...todo];
+    await Promise.all(Array.from({ length: Math.min(4, queue.length) }, async () => {
+      while (queue.length) await sendPart(queue.shift());
+    }));
+    return await api(`${base}/complete`, { method: 'POST', body: {
+      filename: file.name, parts: todo.map((n) => ({ part_number: n, etag: etags[n] })) } });
+  } catch (e) {
+    await api(`${base}?filename=${fn}`, { method: 'DELETE' }).catch(() => {});
+    throw e;
+  }
+}
+
 async function openUpload() {
   const sports = await api('/sports');
   const f = { sport: sports[0].sport, home: '', away: '', title: '', date: '', file: null };
@@ -872,7 +935,7 @@ async function openUpload() {
         body: { title: f.title || `${f.home} v ${f.away}`, sport: f.sport, home_team: f.home, away_team: f.away, played_on: f.date || null },
       });
       bar.style.display = '';
-      await putVideo(match.id, f.file, (p) => { bar.firstChild.style.width = `${Math.round(p * 100)}%`; });
+      await uploadVideo(match.id, f.file, (p) => { bar.firstChild.style.width = `${Math.round(p * 100)}%`; });
       dlg.close();
       await refreshMatches();
       await openMatch(match.id);

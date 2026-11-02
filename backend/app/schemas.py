@@ -167,6 +167,31 @@ class SpanOut(SpanIn):
     created_at: datetime
 
 
+class UploadStart(BaseModel):
+    filename: str = Field(min_length=1, max_length=300)
+    size: int = Field(gt=0)
+
+
+class UploadStarted(BaseModel):
+    upload_id: str
+    part_size: int
+    part_count: int
+
+
+class PartNumbers(BaseModel):
+    part_numbers: list[int] = Field(min_length=1, max_length=100)
+
+
+class UploadedPart(BaseModel):
+    part_number: int = Field(ge=1, le=10000)
+    etag: str = Field(min_length=1, max_length=200)
+
+
+class UploadComplete(BaseModel):
+    filename: str = Field(min_length=1, max_length=300)
+    parts: list[UploadedPart] = Field(min_length=1, max_length=10000)
+
+
 class PitchPoint(BaseModel):
     landmark: str
     u: float  # pixels in the full-resolution frame

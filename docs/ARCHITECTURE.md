@@ -97,6 +97,9 @@ false, precision, recall, team agreement, attribute accuracy (one-to-one matchin
 | POST/GET | `/matches` | create (metadata only) / list |
 | GET/DELETE | `/matches/{id}` | fetch / delete incl. files |
 | PUT | `/matches/{id}/video` | raw body upload, `X-Filename` header; triggers processing |
+| POST | `/matches/{id}/uploads` | start a direct-to-bucket upload (409 with local storage: use PUT) |
+| POST | `/matches/{id}/uploads/{upload_id}/parts` | signed URLs for parts |
+| POST/DELETE | `/matches/{id}/uploads/{upload_id}/complete`, `/matches/{id}/uploads/{upload_id}` | finish / abort |
 | GET | `/matches/{id}/video` | stream playback video: proxy if built, else original (Range supported) |
 | POST | `/matches/{id}/reprocess` | re-run detection, keeping manual/reviewed events |
 | GET | `/matches/{id}/events` | filtered list (see below) |
@@ -142,6 +145,9 @@ browser --> app (API + UI) --> Postgres            jobs table, matches, events
 - GPU: run `python -m app.worker --kinds process_match` on GPU machines (e.g. a Modal or RunPod
   container built from the same image plus the model's dependencies); ffmpeg jobs can run on cheap
   CPU workers. Not wired to a provider yet: needs an account and the detection model.
-- Not built yet: direct browser-to-bucket uploads (presigned multipart; today uploads stream through
-  the API to disk, then to the bucket), cache eviction on workers, autoscaling.
+- Uploads with a bucket: `POST /matches/{id}/uploads` (start) -> `.../parts` (signed part URLs, in
+  batches) -> browser PUTs parts straight to the bucket, 4 at a time, retrying each up to 3 times ->
+  `.../complete` (or `DELETE` to abort). Needs the bucket's CORS rule (`python -m app.cli bucket-cors`).
+  With local storage the start call answers 409 and the browser streams to `PUT /video` instead.
+- Not built yet: cache eviction on workers, autoscaling.
 - GPU time per match is the main unit cost; price plans accordingly.

@@ -96,14 +96,15 @@ docs/ROADMAP.md           phased plan with exit criteria and risks
 - **Files go through `storage`.** Anything that needs a video on disk calls
   `storage.ensure_local(path, key)`; anything finished and durable is `storage.persist()`ed. Never
   assume the local copy exists: with `PITCHSIGHT_STORAGE=s3` local disk is only a cache.
-- **Upload is a raw streamed PUT**, not multipart, so multi-GB Veo files go straight to disk.
+- **Uploads never sit in memory.** With a bucket the browser sends parts straight to it (signed
+  URLs); otherwise it's a raw streamed PUT to disk. Both paths reset the match via `_new_video()`.
 - **Demo data is labelled.** The UI shows a banner whenever a match's events came from the stub.
   Never let simulated events look like real analysis, especially in anything shown to a customer.
 
 ## Not built yet (don't assume these exist)
 
 Frame decoding and player/ball detection + tracking (the model half of `pipeline/real.py`), a GPU
-provider for workers (Modal/RunPod), direct browser-to-bucket uploads, worker cache eviction,
+provider for workers (Modal/RunPod), worker cache eviction,
 deployment to a host, Veo import automation
 (users download the file from Veo and upload it by hand).
 

@@ -21,6 +21,9 @@ uvicorn app.main:app --reload
 
 Or with Docker (app + job worker + Postgres + an S3 emulator): `docker compose up --build`.
 
+With bucket storage, browsers upload videos straight to the bucket in parallel parts (the API only
+signs URLs). The bucket must allow the app's origin: `python -m app.cli bucket-cors https://your.app`.
+
 To run the tests against Postgres: `PITCHSIGHT_TEST_DB_URL=postgresql+psycopg://user@host/pitchsight_test pytest`
 (the database is wiped; its name must contain "test"). CI (`.github/workflows/ci.yml`) runs pytest on
 SQLite and Postgres, the browser tests, and builds and starts the Docker stack.
@@ -54,6 +57,7 @@ code changes needed. Copy `soccer.yaml` to start a new sport.
 | `PITCHSIGHT_JOB_LEASE_S` / `_MAX_ATTEMPTS` | `600` / `3` | a job whose worker stops heartbeating this long is retried, up to this many times |
 | `PITCHSIGHT_STORAGE` | `local` | `s3` keeps videos, proxies and reels in a bucket (local disk becomes a cache) |
 | `PITCHSIGHT_S3_BUCKET` / `_PREFIX` / `_ENDPOINT` / `_REGION` | | bucket settings; `_ENDPOINT` for Cloudflare R2 or MinIO. Credentials: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` |
+| `PITCHSIGHT_UPLOAD_PART_MB` | `64` | part size for direct-to-bucket uploads (raised automatically to stay under S3's 10,000 parts) |
 | `PITCHSIGHT_PROXY` | `auto` | browser playback proxy: `auto` (only when needed), `always`, `never` |
 | `PITCHSIGHT_DB_URL` | sqlite in data dir | any SQLAlchemy URL |
 | `PITCHSIGHT_ALLOW_SIGNUP` | `true` | allow `POST /api/auth/register` (creates a new club + admin) |

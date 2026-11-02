@@ -2,6 +2,7 @@
 
     python -m app.cli create-user EMAIL --club "St Mary's GAC" [--role admin|member]
     python -m app.cli create-user EMAIL --club-id 1
+    python -m app.cli bucket-cors https://app.example.com   # needed for direct-to-bucket uploads
 
 Prompts for the password. --club creates the club if no club has that name.
 """
@@ -36,9 +37,20 @@ def create_user(email: str, password: str, club_name: str | None, club_id: int |
         return user
 
 
+def bucket_cors(origins: list[str]) -> None:
+    from . import storage
+    store = storage.remote()
+    if store is None:
+        raise SystemExit("PITCHSIGHT_STORAGE isn't s3: there is no bucket to configure")
+    store.set_cors(origins)
+    print(f"Bucket {store.bucket}: browsers on {', '.join(origins)} may upload and play videos")
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="python -m app.cli")
     sub = parser.add_subparsers(dest="cmd", required=True)
+    bc = sub.add_parser("bucket-cors", help="allow the web app's origin to upload straight to the bucket")
+    bc.add_argument("origins", nargs="+", help="e.g. https://app.pitchsight.ie")
     cu = sub.add_parser("create-user")
     cu.add_argument("email")
     where = cu.add_mutually_exclusive_group(required=True)
@@ -46,6 +58,8 @@ def main(argv: list[str] | None = None) -> None:
     where.add_argument("--club-id", type=int)
     cu.add_argument("--role", choices=["admin", "member"], default="admin")
     args = parser.parse_args(argv)
+    if args.cmd == "bucket-cors":
+        return bucket_cors(args.origins)
 
     password = getpass.getpass("Password: ") if sys.stdin.isatty() else sys.stdin.readline().rstrip("\n")
     if len(password) < 8:

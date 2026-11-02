@@ -16,6 +16,8 @@ FRONTEND_DIR = ROOT / "frontend"
 # Veo match files are several GB; keep the cap generous but finite.
 MAX_UPLOAD_BYTES = int(float(os.environ.get("PITCHSIGHT_MAX_UPLOAD_GB", "20")) * 1024**3)
 ALLOWED_VIDEO_EXTS = {".mp4", ".mov", ".m4v", ".mkv"}
+# Direct-to-bucket uploads: part size (S3 allows at most 10,000 parts, each >= 5 MB but the last).
+UPLOAD_PART_BYTES = int(os.environ.get("PITCHSIGHT_UPLOAD_PART_MB", "64")) * 2**20
 
 # Seconds of lead-in / follow-through added around an event when cutting a clip.
 CLIP_PRE_S = float(os.environ.get("PITCHSIGHT_CLIP_PRE_S", "5"))

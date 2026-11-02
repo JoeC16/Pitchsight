@@ -61,6 +61,23 @@ def delete_match(match_id: int, user: CurrentUser, db: Session = Depends(get_db)
     db.commit()
 
 
+def _new_video(match: Match) -> None:
+    """A new video replaces the old one: drop stored copies and any proxy of the old file."""
+    if match.proxy_path:
+        Path(match.proxy_path).unlink(missing_ok=True)
+    storage.remove(match.video_key, match.proxy_key)
+    match.video_path = match.video_key = match.proxy_key = None
+    match.proxy_path, match.proxy_status, match.proxy_reason, match.proxy_progress = None, "none", None, 0.0
+    match.status, match.error = "uploaded", None
+
+
+def _upload_ext(filename: str) -> str:
+    ext = Path(unquote(filename)).suffix.lower() or ".mp4"
+    if ext not in config.ALLOWED_VIDEO_EXTS:
+        raise HTTPException(415, f"Unsupported file type '{ext}'")
+    return ext
+
+
 @router.put("/{match_id}/video", response_model=schemas.MatchOut)
 async def upload_video(
     match_id: int, request: Request, background: BackgroundTasks, user: CurrentUser,
@@ -75,9 +92,7 @@ async def upload_video(
     declared = int(request.headers.get("content-length") or 0)
     if declared > config.MAX_UPLOAD_BYTES:
         raise HTTPException(413, "File too large")
-    ext = Path(unquote(request.headers.get("x-filename", ""))).suffix.lower() or ".mp4"
-    if ext not in config.ALLOWED_VIDEO_EXTS:
-        raise HTTPException(415, f"Unsupported file type '{ext}'")
+    ext = _upload_ext(request.headers.get("x-filename", ""))
 
     config.VIDEO_DIR.mkdir(parents=True, exist_ok=True)
     dest = config.VIDEO_DIR / f"{match.id}{ext}"
@@ -97,13 +112,8 @@ async def upload_video(
         part.unlink(missing_ok=True)
         raise
 
-    match.video_path, match.status, match.error = str(dest), "uploaded", None
-    # Stored copies and a proxy left from an earlier upload belong to the old file.
-    if match.proxy_path:
-        Path(match.proxy_path).unlink(missing_ok=True)
-    storage.remove(match.video_key, match.proxy_key)
-    match.video_key = match.proxy_key = None
-    match.proxy_path, match.proxy_status, match.proxy_reason, match.proxy_progress = None, "none", None, 0.0
+    _new_video(match)
+    match.video_path = str(dest)
     db.commit()
     if config.JOBS_MODE == "queue" and storage.remote() is not None:
         # A worker on another machine can't see this disk: store the upload before queueing.
@@ -326,3 +336,73 @@ def delete_pitch(match_id: int, user: CurrentUser, db: Session = Depends(get_db)
     match = _get_match(db, match_id, user)
     match.pitch_setup = None
     db.commit()
+
+
+# ---------- direct-to-bucket uploads ----------
+# The browser uploads the file in parts straight to S3/R2 with signed URLs, then calls complete.
+# Only with PITCHSIGHT_STORAGE=s3; otherwise start answers 409 and the client uses PUT /video.
+
+def _bucket_upload(match_id: int, user: User, db: Session) -> tuple[Match, storage.S3Storage]:
+    match = _get_match(db, match_id, user)
+    store = storage.remote()
+    if store is None:
+        raise HTTPException(409, "Direct uploads need bucket storage; use PUT /video")
+    if match.status not in ("created", "failed"):
+        raise HTTPException(409, f"Match is '{match.status}'; video can only be uploaded once")
+    return match, store
+
+
+def _video_key(match: Match, filename: str) -> str:
+    return f"videos/m{match.id}{_upload_ext(filename)}"
+
+
+@router.post("/{match_id}/uploads", response_model=schemas.UploadStarted, status_code=201)
+def start_upload(match_id: int, body: schemas.UploadStart, user: CurrentUser, db: Session = Depends(get_db)):
+    match, store = _bucket_upload(match_id, user, db)
+    if body.size > config.MAX_UPLOAD_BYTES:
+        raise HTTPException(413, "File too large")
+    key = _video_key(match, body.filename)
+    part_size = max(config.UPLOAD_PART_BYTES, -(-body.size // 10000))  # stay within S3's 10,000 parts
+    upload_id = store.start_multipart(key, mimetypes.guess_type(key)[0] or "video/mp4")
+    return {"upload_id": upload_id, "part_size": part_size, "part_count": -(-body.size // part_size)}
+
+
+@router.post("/{match_id}/uploads/{upload_id}/parts")
+def sign_parts(match_id: int, upload_id: str, body: schemas.PartNumbers, user: CurrentUser,
+               filename: str = "video.mp4", db: Session = Depends(get_db)) -> dict:
+    match, store = _bucket_upload(match_id, user, db)
+    if any(not 1 <= n <= 10000 for n in body.part_numbers):
+        raise HTTPException(422, "part numbers must be 1-10000")
+    urls = store.part_urls(_video_key(match, filename), upload_id, body.part_numbers)
+    return {"urls": {str(n): u for n, u in urls.items()}}
+
+
+@router.post("/{match_id}/uploads/{upload_id}/complete", response_model=schemas.MatchOut)
+def complete_upload(match_id: int, upload_id: str, body: schemas.UploadComplete, background: BackgroundTasks,
+                    user: CurrentUser, db: Session = Depends(get_db)):
+    match, store = _bucket_upload(match_id, user, db)
+    key = _video_key(match, body.filename)
+    try:
+        size = store.complete_multipart(key, upload_id, [(p.part_number, p.etag) for p in body.parts])
+    except Exception as exc:  # noqa: BLE001 - botocore errors: bad upload id, missing/mismatched parts
+        raise HTTPException(400, f"Could not complete the upload: {exc}") from None
+    if size > config.MAX_UPLOAD_BYTES:
+        storage.remove(key)
+        raise HTTPException(413, "File too large")
+    if match.video_key == key:
+        match.video_key = None  # this upload just overwrote that object: don't delete it below
+    _new_video(match)
+    match.video_key = key
+    db.commit()
+    jobs.submit(background, db, "process_match", match.id)
+    return match
+
+
+@router.delete("/{match_id}/uploads/{upload_id}", status_code=204)
+def abort_upload(match_id: int, upload_id: str, user: CurrentUser, filename: str = "video.mp4",
+                 db: Session = Depends(get_db)):
+    match, store = _bucket_upload(match_id, user, db)
+    try:
+        store.abort_multipart(_video_key(match, filename), upload_id)
+    except Exception:  # noqa: BLE001 - already gone is fine
+        pass

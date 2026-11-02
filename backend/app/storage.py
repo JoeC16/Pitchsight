@@ -55,6 +55,31 @@ class S3Storage:
     def delete(self, key: str) -> None:
         self.client.delete_object(Bucket=self.bucket, Key=self._k(key))
 
+    # ---- multipart uploads straight from the browser (the API never sees the bytes)
+    def start_multipart(self, key: str, content_type: str) -> str:
+        return self.client.create_multipart_upload(Bucket=self.bucket, Key=self._k(key), ContentType=content_type)["UploadId"]
+
+    def part_urls(self, key: str, upload_id: str, numbers: list[int]) -> dict[int, str]:
+        return {n: self.client.generate_presigned_url(
+            "upload_part", Params={"Bucket": self.bucket, "Key": self._k(key), "UploadId": upload_id, "PartNumber": n},
+            ExpiresIn=3600) for n in numbers}
+
+    def complete_multipart(self, key: str, upload_id: str, parts: list[tuple[int, str]]) -> int:
+        """Finish the upload; returns the object's size in bytes."""
+        self.client.complete_multipart_upload(
+            Bucket=self.bucket, Key=self._k(key), UploadId=upload_id,
+            MultipartUpload={"Parts": [{"PartNumber": n, "ETag": etag} for n, etag in sorted(parts)]})
+        return self.client.head_object(Bucket=self.bucket, Key=self._k(key))["ContentLength"]
+
+    def abort_multipart(self, key: str, upload_id: str) -> None:
+        self.client.abort_multipart_upload(Bucket=self.bucket, Key=self._k(key), UploadId=upload_id)
+
+    def set_cors(self, origins: list[str]) -> None:
+        """Let browsers on these origins upload parts and read the ETag header they need."""
+        self.client.put_bucket_cors(Bucket=self.bucket, CORSConfiguration={"CORSRules": [{
+            "AllowedOrigins": origins, "AllowedMethods": ["PUT", "GET", "HEAD"], "AllowedHeaders": ["*"],
+            "ExposeHeaders": ["ETag"], "MaxAgeSeconds": 3600}]})
+
     def url(self, key: str, filename: str | None = None, content_type: str | None = None) -> str:
         params = {"Bucket": self.bucket, "Key": self._k(key)}
         if filename:
