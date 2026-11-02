@@ -97,13 +97,14 @@ jobs:
         run: |
           set -e
           api=localhost:8000/api
-          curl -sf -c jar -X POST $api/auth/register -H 'content-type: application/json' \
+          csrf='X-PitchSight: 1'   # cookie-authenticated writes need it (CSRF protection)
+          curl -sf -c jar -H "$csrf" -X POST $api/auth/register -H 'content-type: application/json' \
             -d '{"club_name":"CI","email":"ci@example.com","password":"ci-password"}'
-          id=$(curl -sf -b jar -X POST $api/matches -H 'content-type: application/json' \
+          id=$(curl -sf -b jar -H "$csrf" -X POST $api/matches -H 'content-type: application/json' \
             -d '{"title":"CI","sport":"gaa_football","home_team":"A","away_team":"B"}' | python3 -c 'import json,sys;print(json.load(sys.stdin)["id"])')
           docker compose exec -T app ffmpeg -loglevel error -f lavfi -i testsrc=duration=60:size=320x240:rate=10 \
             -pix_fmt yuv420p -movflags frag_keyframe+empty_moov -f mp4 pipe:1 > v.mp4
-          curl -sf -b jar -X PUT $api/matches/$id/video -H 'X-Filename: v.mp4' --data-binary @v.mp4 > /dev/null
+          curl -sf -b jar -H "$csrf" -X PUT $api/matches/$id/video -H 'X-Filename: v.mp4' --data-binary @v.mp4 > /dev/null
           for i in $(seq 60); do
             status=$(curl -sf -b jar $api/matches/$id | python3 -c 'import json,sys;print(json.load(sys.stdin)["status"])')
             [ "$status" = ready ] && break; [ "$status" = failed ] && break; sleep 2
