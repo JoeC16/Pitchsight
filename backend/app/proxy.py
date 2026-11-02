@@ -52,7 +52,7 @@ def build_proxy(match_id: int) -> None:
     db = SessionLocal()
     try:
         match = db.get(Match, match_id)
-        if match is None or not match.video_path:
+        if match is None or not match.has_video:
             return
         if not shutil.which("ffmpeg"):
             raise RuntimeError("ffmpeg is not installed")

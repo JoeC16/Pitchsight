@@ -14,6 +14,11 @@ Manifest CSV, one row per game (paths relative to the manifest):
     python -m app.dataset split    MANIFEST --by ground [--ratios 70,15,15] [--seed 1] [--write]
     python -m app.dataset run      MANIFEST --split val --detector stub --pred-dir preds/
     python -m app.dataset evaluate MANIFEST --split test --truth-dir truth/ --pred-dir preds/
+    python -m app.dataset load     MANIFEST --club-id 1 --mapping M.yaml [--complete] [--dry-run]
+
+`load` puts the games into the app for a club: one match per game, its video stored like an upload,
+its tags as reviewed events with origin "imported". Re-running skips games already loaded. Optional
+manifest columns for it: title, played_on (YYYY-MM-DD), second_half_s (video time the 2nd half starts).
 """
 import argparse
 import csv
@@ -133,6 +138,119 @@ def _in_split(rows, split):
     return [r for r in rows if not split or r.get("split") == split]
 
 
+# Tags further than this past the end of the video mean the video and tags don't belong together
+# (trimmed or re-exported video, wrong file, match-clock times): the game is not loaded.
+TAG_OVERRUN_S = 5.0
+
+
+def check_alignment(events, duration_s: float) -> str | None:
+    """Why these tags don't fit a video of this length, or None."""
+    if not events:
+        return "no events mapped from the tags"
+    late = [e for e in events if e.t_start > duration_s + TAG_OVERRUN_S]
+    if late:
+        return (f"{len(late)} tag(s) after the end of the {duration_s / 60:.1f} min video "
+                f"(last at {max(e.t_start for e in late) / 60:.1f} min): trimmed video, wrong file, or match-clock times?")
+    return None
+
+
+def cmd_load(args) -> int:
+    import shutil
+    from datetime import date
+
+    from sqlalchemy import select
+
+    from . import config, jobs, storage
+    from .db import SessionLocal
+    from .migrate import upgrade_db
+    from .models import Club, Event, Match, VerifiedSpan
+    from .pipeline.probe import ProbeError, probe
+    from .pipeline.real import period_finder
+    from .proxy import needs_proxy
+
+    upgrade_db()
+    rows = load_manifest(args.manifest)
+    loaded, skipped, problems, warnings = 0, 0, [], []
+    with SessionLocal() as db:
+        club = db.get(Club, args.club_id)
+        if club is None:
+            raise ValueError(f"no club with id {args.club_id} (create one with python -m app.cli create-user)")
+        for r in rows:
+            gid = r["game_id"]
+            if db.scalar(select(Match.id).where(Match.club_id == club.id, Match.external_id == gid)):
+                skipped += 1
+                continue
+            mapping = load_mapping(_rel(args.manifest, r["mapping"]) if r.get("mapping") else args.mapping)
+            pack = taxonomy.get_pack(mapping["sport"])
+            teams = None
+            if r.get("home_names") or r.get("away_names"):
+                teams = {"home": [n for n in r.get("home_names", "").split("|") if n],
+                         "away": [n for n in r.get("away_names", "").split("|") if n]}
+            video = _rel(args.manifest, r["video"])
+            try:
+                tags = read_tags(_rel(args.manifest, r["tags"]), csv_columns=mapping.get("csv_columns"))
+                info = probe(video)
+            except (ValueError, OSError, ProbeError) as exc:
+                problems.append(f"{gid}: {exc}")
+                continue
+            events, rep = apply(tags, mapping, teams=teams, offset_s=float(r.get("offset_s") or 0))
+            if why := check_alignment(events, info.duration_s):
+                problems.append(f"{gid}: not loaded, {why}")
+                continue
+            if rep.unmapped_codes or rep.invalid:
+                warnings.append(f"{gid}: loaded with {sum(rep.unmapped_codes.values())} unmapped and "
+                                f"{len(rep.invalid)} invalid tags (see `import` for details)")
+            if args.dry_run:
+                loaded += 1
+                continue
+
+            home = r.get("home_team") or (teams or {}).get("home", ["Home"])[0]
+            away = r.get("away_team") or (teams or {}).get("away", ["Away"])[0]
+            match = Match(
+                club_id=club.id, external_id=gid, title=r.get("title") or f"{home} v {away}", sport=mapping["sport"],
+                home_team=home, away_team=away,
+                played_on=date.fromisoformat(r["played_on"]) if r.get("played_on") else None,
+                status="ready", progress=1.0, detector="imported", duration_s=info.duration_s, fps=info.fps,
+                width=info.width, height=info.height, video_codec=info.video_codec,
+            )
+            db.add(match)
+            db.flush()
+            # Store the video like an upload would: in the bucket, or copied/linked into the data dir.
+            if storage.remote() is not None:
+                match.video_key = storage.persist(video, f"videos/m{match.id}{video.suffix.lower()}")
+            else:
+                dest = config.VIDEO_DIR / f"{match.id}{video.suffix.lower()}"
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                if args.link:
+                    dest.symlink_to(video.resolve())
+                else:
+                    shutil.copy2(video, dest)
+                match.video_path = str(dest)
+            match.proxy_reason = needs_proxy(info, video)
+            match.proxy_status = "pending" if match.proxy_reason and not args.skip_proxies else "none"
+
+            starts = [0.0, float(r["second_half_s"])] if r.get("second_half_s") else None
+            period_of = period_finder(starts, info.duration_s, pack["periods"])
+            for e in events:
+                db.add(Event(match_id=match.id, type=e.type, team=e.team, period=period_of(e.t_start),
+                             t_start=e.t_start, t_end=e.t_end, attributes=e.attributes,
+                             confidence=None, origin="imported", reviewed=True))
+            if args.complete:  # the provider tagged every event of these types: the whole match is checked
+                db.add(VerifiedSpan(match_id=match.id, t_start=0.0, t_end=info.duration_s))
+            db.commit()
+            if match.proxy_status == "pending":
+                jobs.submit(None, db, "build_proxy", match.id)  # queued, or built now without a queue
+            loaded += 1
+            print(f"{gid}: match {match.id}, {len(events)} events")
+    verb = "would load" if args.dry_run else "loaded"
+    print(f"\n{verb} {loaded}, already loaded {skipped}, not loaded {len(problems)}, warnings {len(warnings)}")
+    for title, items in (("Not loaded:", problems), ("Warnings:", warnings)):
+        if items:
+            print(title)
+            print("\n".join("  " + p for p in items))
+    return 1 if (problems or warnings) and args.strict else 0
+
+
 def cmd_run(args) -> int:
     from .pipeline import get_detector
     from .pipeline.interfaces import MatchContext
@@ -218,13 +336,22 @@ def main(argv=None) -> int:
     p.add_argument("manifest", type=Path); p.add_argument("--split", choices=SPLITS)  # noqa: E702
     p.add_argument("--truth-dir", type=Path, required=True); p.add_argument("--pred-dir", type=Path, required=True)  # noqa: E702
     p.add_argument("--tolerance", type=float, default=3.0); p.add_argument("--json", action="store_true")  # noqa: E702
+    p = sub.add_parser("load", help="create matches for a club from the games: video + imported tags")
+    p.add_argument("manifest", type=Path); p.add_argument("--club-id", type=int, required=True)  # noqa: E702
+    p.add_argument("--mapping", type=Path)
+    p.add_argument("--link", action="store_true", help="symlink local videos instead of copying (local storage only)")
+    p.add_argument("--complete", action="store_true", help="tags cover every event: mark whole matches as checked")
+    p.add_argument("--skip-proxies", action="store_true", help="don't build playback proxies")
+    p.add_argument("--dry-run", action="store_true", help="check everything, load nothing")
+    p.add_argument("--strict", action="store_true")
     args = ap.parse_args(argv)
-    if args.cmd == "import" and not args.mapping:
+    if args.cmd in ("import", "load") and not args.mapping:
         rows = load_manifest(args.manifest)
         if any(not r.get("mapping") for r in rows):
             ap.error("give --mapping (some games have no mapping column)")
     try:
-        return {"import": cmd_import, "split": cmd_split, "run": cmd_run, "evaluate": cmd_evaluate}[args.cmd](args)
+        return {"import": cmd_import, "split": cmd_split, "run": cmd_run, "evaluate": cmd_evaluate,
+                "load": cmd_load}[args.cmd](args)
     except (ValueError, OSError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2

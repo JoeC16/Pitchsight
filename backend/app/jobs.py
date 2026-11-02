@@ -44,6 +44,8 @@ def submit(background, db: Session, kind: str, target_id: int) -> None:
     if config.JOBS_MODE == "queue":
         db.add(Job(kind=kind, target_id=target_id))
         db.commit()
+    elif background is None:  # e.g. a CLI: no request to attach to, so run it now
+        _registry()[kind](target_id)
     else:
         background.add_task(_registry()[kind], target_id)
 

@@ -133,7 +133,7 @@ def get_video(match_id: int, user: CurrentUser, db: Session = Depends(get_db)):
 def reprocess(match_id: int, background: BackgroundTasks, user: CurrentUser, db: Session = Depends(get_db)):
     """Re-run detection. Keeps manual and human-reviewed events; replaces the rest."""
     match = _get_match(db, match_id, user)
-    if not match.video_path:
+    if not match.has_video:
         raise HTTPException(409, "Upload a video first")
     if match.status == "processing" or match.proxy_status == "pending":
         raise HTTPException(409, "Already processing")
@@ -180,7 +180,7 @@ def create_reel(
     """Export the events matching the query-string filters (same as GET /events) as one mp4.
     Returns immediately; poll GET /api/reels/{id} until status is 'ready', then download."""
     match = _get_match(db, match_id, user)
-    if not match.video_path:
+    if not match.has_video:
         raise HTTPException(409, "Upload a video first")
     try:
         stmt = queries.filter_events(match_id, request.query_params)

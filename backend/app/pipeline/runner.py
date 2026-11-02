@@ -28,12 +28,12 @@ def process_match(match_id: int) -> None:
     db = SessionLocal()
     try:
         match = db.get(Match, match_id)
-        if match is None or not match.video_path:
+        if match is None or not match.has_video:
             return
         match.status, match.progress, match.error = "processing", 0.0, None
         db.commit()
 
-        if storage.remote() is not None and not match.video_key:
+        if storage.remote() is not None and not match.video_key and match.video_path:
             match.video_key = storage.persist(Path(match.video_path), f"videos/m{match.id}{Path(match.video_path).suffix}")
             db.commit()
         video = storage.ensure_local(match.video_path, match.video_key)

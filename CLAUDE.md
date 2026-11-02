@@ -49,7 +49,7 @@ backend/app/
   evaluation.py           precision/recall vs verified spans or a ground-truth CSV
   evaluate.py             python -m app.evaluate (CLI for the above)
   dataset.py              many tagged games: manifest, import, grouped split, batch run + evaluate
-                          python -m app.dataset import|split|run|evaluate MANIFEST ...
+                          python -m app.dataset import|split|run|evaluate|load MANIFEST ...
   tags/                   import other tools' tags (Sportscode/Nacsport XML, CSV) via a mapping YAML:
                           python -m app.tags inspect FILE | convert FILE --mapping M.yaml -o truth.csv
   routers/                auth, sports, matches (upload/video/events/summary/reels), events, reels
@@ -84,7 +84,8 @@ docs/ROADMAP.md           phased plan with exit criteria and risks
 - **`Event.team` semantics differ per event type** and are documented in each pack's
   `team_means` (shot = shooting team, turnover = team that WON the ball, kickout = kicking team,
   free = team that conceded). Keep this consistent when writing real detection.
-- **`origin` and `reviewed` model trust.** `origin` is `stub | ai | manual`. Any human edit sets
+- **`origin` and `reviewed` model trust.** `origin` is `stub | ai | manual | imported` (imported =
+  human tags from another tool, loaded by `python -m app.dataset load`). Any human edit sets
   `reviewed=true`. `reprocess` replaces only unreviewed non-manual events, so coaches' corrections
   survive a model upgrade. Confidence is stored so low-confidence items can be queued for review.
 - **The Detector protocol is the seam** between video and everything else. The runner validates

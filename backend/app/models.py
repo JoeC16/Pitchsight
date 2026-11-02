@@ -53,6 +53,8 @@ class Match(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     club_id: Mapped[int] = mapped_column(ForeignKey("clubs.id", ondelete="CASCADE"), index=True)
+    # Id in an external dataset (manifest game_id), so bulk loads can be re-run safely.
+    external_id: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
     title: Mapped[str] = mapped_column(String(200))
     sport: Mapped[str] = mapped_column(String(40))
     home_team: Mapped[str] = mapped_column(String(120))
@@ -92,7 +94,7 @@ class Match(Base):
 
     @property
     def has_video(self) -> bool:
-        return bool(self.video_path)
+        return bool(self.video_path or self.video_key)
 
 
 class Event(Base):
@@ -108,7 +110,7 @@ class Event(Base):
     # Free-form classifications, validated against the match's sport pack.
     attributes: Mapped[dict] = mapped_column(JSON, default=dict)
     confidence: Mapped[float | None] = mapped_column(Float, nullable=True)  # None for manual tags
-    origin: Mapped[str] = mapped_column(String(20), default="manual")  # stub | ai | manual
+    origin: Mapped[str] = mapped_column(String(20), default="manual")  # stub | ai | manual | imported
     reviewed: Mapped[bool] = mapped_column(Boolean, default=False)
 
     match: Mapped[Match] = relationship(back_populates="events")

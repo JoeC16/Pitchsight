@@ -30,7 +30,7 @@ def get_or_cut_clip(match: Match, event: Event) -> Path:
 
 def get_or_cut_window(match: Match, start: float, end: float) -> Path:
     """Cut [start, end] of the match video to an mp4, or return the cached copy."""
-    if not match.video_path:
+    if not match.has_video:
         raise ClipError("Match has no video")
     try:
         source = storage.ensure_local(match.video_path, match.video_key)

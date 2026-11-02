@@ -338,7 +338,8 @@ function renderList() {
         h('div', { class: 'line1' },
           h('span', { class: 'badge', style: { background: t.color } }, t.label),
           h('span', { class: e.team === 'home' ? 'home-c' : e.team === 'away' ? 'away-c' : '' }, teamName(e.team)),
-          e.reviewed ? h('span', { class: 'tag ok' }, '✓ reviewed') : null,
+          e.origin === 'imported' ? h('span', { class: 'tag', title: 'Tagged in another tool and imported' }, 'imported')
+            : e.reviewed ? h('span', { class: 'tag ok' }, '✓ reviewed') : null,
           e.origin === 'stub' && !e.reviewed ? h('span', { class: 'tag demo' }, 'demo') : null,
           e.confidence != null && !e.reviewed ? h('span', { class: 'tag' }, `${Math.round(e.confidence * 100)}%`) : null),
         h('div', { class: 'attrs' }, attrSummary(e) || 'unclassified')),
