@@ -1,9 +1,9 @@
 """Per-frame object detection: the swappable model behind the video pipeline.
 
-A FrameDetector turns one RGB frame into boxes with a class. The real one will be a trained
-model (RF-DETR, Apache-2.0, fine-tuned on Veo-style footage; the ball is a few pixels wide).
-Select it with PITCHSIGHT_FRAME_DETECTOR. The only detector here today is `synthetic`, which
-finds the solid-colour shapes drawn by tests/synthetic_video.py and is useless on real video.
+A FrameDetector turns one RGB frame into boxes with a class. Select it with
+PITCHSIGHT_FRAME_DETECTOR:
+  rfdetr     RF-DETR (Apache-2.0) with COCO weights, or fine-tuned ones (PITCHSIGHT_RFDETR_WEIGHTS)
+  synthetic  finds the solid-colour shapes drawn by tests/synthetic_video.py; useless on real video
 """
 from collections import deque
 from dataclasses import dataclass
@@ -73,9 +73,52 @@ class SyntheticBlobDetector:
         return out
 
 
+class RFDETRDetector:
+    """RF-DETR (Roboflow, Apache-2.0), pre-trained on COCO: 'person' -> player, 'sports ball' -> ball.
+
+    Off-the-shelf COCO weights see broadcast-style photos, not wide panoramas: expect players to be
+    found reasonably and the ball poorly (it's a few pixels wide). Fine-tune on labelled Veo frames
+    and point PITCHSIGHT_RFDETR_WEIGHTS at the result. Only the open-licence sizes are offered here;
+    RF-DETR's "Plus"/platform models carry a different licence (docs/LICENCES.md).
+    Needs `pip install -r requirements-ml.txt` (torch); a GPU makes it ~10x faster.
+    """
+
+    name = "rfdetr"
+    SIZES = ("nano", "small", "medium", "base", "large")
+
+    def __init__(self, size: str = "small", weights: str | None = None,
+                 player_threshold: float = 0.35, ball_threshold: float = 0.15):
+        try:
+            import rfdetr
+            from rfdetr.assets.coco_classes import COCO_CLASSES
+        except ImportError:
+            raise DetectorUnavailable("RF-DETR isn't installed: pip install -r requirements-ml.txt") from None
+        if size not in self.SIZES:
+            raise DetectorUnavailable(f"PITCHSIGHT_RFDETR_SIZE must be one of {self.SIZES}")
+        model_cls = getattr(rfdetr, f"RFDETR{size.capitalize()}")
+        self.model = model_cls(pretrain_weights=weights) if weights else model_cls()
+        self.names = COCO_CLASSES  # class_id -> name, as in RF-DETR's own examples
+        self.player_threshold, self.ball_threshold = player_threshold, ball_threshold
+
+    def detect(self, frame: np.ndarray) -> list[Detection]:
+        from PIL import Image
+        d = self.model.predict(Image.fromarray(frame), threshold=min(self.player_threshold, self.ball_threshold))
+        players, balls = [], []
+        for box, cid, conf in zip(d.xyxy, d.class_id, d.confidence):
+            name, conf, box = self.names.get(int(cid)), float(conf), tuple(float(v) for v in box)
+            if name == "person" and conf >= self.player_threshold:
+                players.append(Detection(box, "player", conf))
+            elif name == "sports ball" and conf >= self.ball_threshold:
+                balls.append(Detection(box, "ball", conf))
+        return players + sorted(balls, key=lambda b: -b.score)[:1]  # one ball per frame
+
+
 def get_frame_detector(name: str) -> FrameDetector:
     if name == "synthetic":
         return SyntheticBlobDetector()
+    if name == "rfdetr":
+        from .. import config
+        return RFDETRDetector(config.RFDETR_SIZE, config.RFDETR_WEIGHTS or None)
     if name in ("", "none"):
         raise DetectorUnavailable(
             "No player/ball detection model is configured (PITCHSIGHT_FRAME_DETECTOR). Until one is, "

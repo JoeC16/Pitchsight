@@ -30,6 +30,8 @@ DETECTOR = os.environ.get("PITCHSIGHT_DETECTOR", "stub")
 # For DETECTOR=real: the per-frame player/ball model (pipeline/detection.py) and sampling rate.
 FRAME_DETECTOR = os.environ.get("PITCHSIGHT_FRAME_DETECTOR", "none")
 DETECT_FPS = float(os.environ.get("PITCHSIGHT_DETECT_FPS", "5"))
+RFDETR_SIZE = os.environ.get("PITCHSIGHT_RFDETR_SIZE", "small")      # nano | small | medium | base | large
+RFDETR_WEIGHTS = os.environ.get("PITCHSIGHT_RFDETR_WEIGHTS", "")     # fine-tuned checkpoint (.pth)
 
 # Auth. Signup creates a new, empty club, so leaving it open doesn't expose other clubs' data.
 ALLOW_SIGNUP = os.environ.get("PITCHSIGHT_ALLOW_SIGNUP", "true").lower() == "true"

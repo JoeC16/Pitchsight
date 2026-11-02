@@ -14,8 +14,11 @@ RUN apt-get update \
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 \
     PITCHSIGHT_DATA_DIR=/data
 WORKDIR /app
-COPY backend/requirements.txt backend/requirements.txt
+COPY backend/requirements.txt backend/requirements-ml.txt backend/
 RUN pip install -r backend/requirements.txt
+# GPU worker images: --build-arg WITH_ML=1 adds the detection model (torch, RF-DETR; several GB).
+ARG WITH_ML=0
+RUN if [ "$WITH_ML" = "1" ]; then pip install -r backend/requirements-ml.txt; fi
 
 COPY sport_packs sport_packs
 COPY frontend frontend

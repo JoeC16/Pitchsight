@@ -26,18 +26,26 @@ binary (offer its source). Running it on your own servers is not distribution. A
 ffmpeg build without x264 avoids this but loses the H.264 encoder used for clips, reels and
 proxies; a commercial x264 licence also exists.
 
-## Candidates for detection (not yet adopted)
+## Detection model (GPU workers only: `backend/requirements-ml.txt`)
 
-To be confirmed, including the licence of the exact **weights** file, when adopted. Model code and
-weights can carry different licences.
+Checked from installed package metadata. Not part of the API image.
 
-| Component | Licence (code) | Commercial use | Notes |
-|---|---|---|---|
-| RF-DETR (Roboflow) | Apache-2.0 | yes | preferred detector; confirm weights licence per checkpoint |
-| ByteTrack | MIT | yes | tracker |
-| supervision (Roboflow) | MIT | yes | tracking/annotation utilities |
-| Ultralytics YOLO | AGPL-3.0 | **only with their enterprise licence** (or open-sourcing the service) | avoid unless clearly better |
-| SoccerNet datasets | NDA, research use | **no** | don't train commercial models on it |
+| Component | Version | Licence | Commercial use | Notes |
+|---|---|---|---|---|
+| RF-DETR (`rfdetr`, Roboflow) | 1.11 | Apache-2.0 (code) | yes | adapter in `pipeline/detection.py`. Weights for the open sizes (nano/small/medium/base/large) download from `storage.googleapis.com/rfdetr/` under the package's Apache-2.0 terms. **Do not use the "RF-DETR Plus" / platform models** (XLarge and up, `rfdetr.platform`): they come under a separate Roboflow licence |
+| COCO-pretrained weights | | trained on COCO (annotations CC BY 4.0; images from Flickr under various licences) | widely used commercially; have a solicitor confirm | we'll fine-tune on our own Veo frames anyway |
+| PyTorch (`torch`) | 2.15 | as reported by the package: Apache-2.0 and bundled components (historically BSD-3-Clause) | yes | |
+| torchvision | 0.29 | BSD | yes | |
+| supervision (Roboflow) | 0.31 | MIT | yes | pulled in by rfdetr |
+| transformers (Hugging Face) | 5.22 | Apache-2.0 | yes | pulled in by rfdetr |
+| Pillow | 13.0 | MIT-CMU | yes | |
+
+**Not used, on purpose**
+
+| Component | Licence | Why not |
+|---|---|---|
+| Ultralytics YOLO | AGPL-3.0 | commercial use needs their enterprise licence (or open-sourcing the service) |
+| SoccerNet datasets | NDA, research use | can't train commercial models on it |
 
 ## Footage
 

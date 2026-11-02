@@ -1,0 +1,4 @@
+# Detection model for GPU workers (heavy: pulls in torch). Not needed by the API.
+#   pip install -r requirements-ml.txt     or     docker build --build-arg WITH_ML=1 ...
+-r requirements.txt
+rfdetr>=1.11   # Apache-2.0 (Roboflow); use only the open sizes, see docs/LICENCES.md

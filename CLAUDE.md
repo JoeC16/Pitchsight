@@ -60,7 +60,8 @@ backend/app/
     stub.py               SYNTHETIC events for development (origin="stub")
     real.py               real pipeline: video (or supplied tracking) -> rules
     video.py              ffmpeg frame decoding to numpy
-    detection.py          FrameDetector seam + registry (only a synthetic-test detector so far)
+    detection.py          FrameDetector seam: RF-DETR adapter (COCO weights; needs requirements-ml.txt)
+                          and a synthetic-test detector
     track.py              simple pitch-space tracker (stand-in for ByteTrack)
     video_pipeline.py     frames -> detections -> pitch coords -> tracks -> teams -> Tracking
     tracking.py           tracking data format (players + ball in pitch metres over time)
@@ -112,7 +113,8 @@ docs/ROADMAP.md           phased plan with exit criteria and risks
 
 ## Not built yet (don't assume these exist)
 
-A real player/ball detection model (plugs into `pipeline/detection.py`), a production tracker, a GPU
+A detection model tuned for Veo footage (RF-DETR runs with COCO weights; untested on real video),
+a production tracker, a GPU
 provider for workers (Modal/RunPod), worker cache eviction,
 deployment to a host, Veo import automation
 (users download the file from Veo and upload it by hand).

@@ -86,9 +86,10 @@ A hand-tagged CSV still works.
 | Pitch calibration: pack-driven geometry, homography from clicked landmarks, overlay, zone/side from position | built | synthetic camera recovers unclicked points to <0.5 m with 1.5 px click noise; browser test calibrates a synthetic pitch video by clicking (0.55 m RMS, unclicked landmark 0.73 m off) |
 | Possession timeline from tracking | built | synthetic scenarios (flicker ignored, passes kept) |
 | Rule-based kickouts (length / target / retained-lost / clean-break), shots (zone / side / source; outcome only when clearly wide), turnovers (zone / kind) with confidence | built | 15 synthetic scenario tests incl. direction swap at half time, pass vs shot, kickout not double-counted as turnover |
-| Kit-colour team assignment (k-means in Lab, keepers/refs unassigned) | built, not wired | synthetic colours |
+| Kit-colour team assignment (relative: nearer kit, clearly; keepers/refs unassigned) | built, wired | kit colours + 2nd-half time now in pitch setup |
 | `pipeline/real.py` behind the Detector interface | built; runs from `<video>.tracking.json` | app-level test: upload, "set up the pitch" failure, calibrate, reprocess, events stored as `ai`, evaluable |
-| Frame decoding + player/ball detection + tracking (RF-DETR + ByteTrack) | **not built** | needs footage, and network access to install torch/weights |
+| Frame decoding + detection + tracking + teams -> Tracking (`video_pipeline.py`) | built | synthetic rendered matches: video -> events == rules on true positions, also through the app |
+| RF-DETR (Apache-2.0, COCO weights) as `PITCHSIGHT_FRAME_DETECTOR=rfdetr` | wired, runs | installs from PyPI, weights download OK, ~0.5 s/frame on CPU. **Accuracy on Veo footage unknown** (COCO weights; the ball is tiny) until footage |
 | Outcome classifier (goal/point/saved) | **not built** | needs labelled footage |
 | `docs/LICENCES.md` | done | from installed package metadata; flags GPL ffmpeg build |
 
@@ -112,6 +113,7 @@ A hand-tagged CSV still works.
 | Tag importers: Sportscode/Nacsport-style XML, CSV (delimiter + time format detected) | built | fixtures for both; `python -m app.tags inspect` lists codes/labels and writes a starter mapping |
 | Provider mapping YAML -> sport-pack events (team by name, "tag names the loser" inversion, value maps, ignore list), all validated; report of unmapped codes/values, missing teams, invalid | built | tests; `convert --strict` fails on anything unmapped |
 | Dataset manifest + `python -m app.dataset import / split / run / evaluate` | built | grouped split never puts a ground in two splits; end-to-end import -> run -> evaluate on generated games |
+| `python -m app.dataset load`: games into the app as browsable matches (imported human tags, origin `imported`), re-runnable, skips games whose tags run past their video | built | tests incl. bucket storage and a too-short video |
 | Needs from the provider | **waiting** | one sample game + tag file; whether times are video- or match-clock; their definitions; written permission to train a commercial product on it |
 
 ## Phase D: production readiness — IN PROGRESS (started early, with your go-ahead)
@@ -125,8 +127,8 @@ A hand-tagged CSV still works.
 | Object storage (`PITCHSIGHT_STORAGE=s3`: S3 / R2 / MinIO), local disk as cache, signed-URL playback/downloads | built | moto tests (upload, playback redirect, clips from a machine without the file, reels, deletion); local run with API and worker on separate disks, API copy deleted |
 | Persistent job queue (`PITCHSIGHT_JOBS=queue`) + `python -m app.worker` (atomic claim, heartbeat, retry, give up after 3, kinds per worker) | built | tests incl. dead worker retried then failed, heartbeat keeps a long job alive, proxy/reel jobs on a separate worker |
 | GPU worker on a provider (Modal/RunPod) | not built | needs an account and the detection model |
-| Direct browser -> bucket uploads (presigned multipart) | not built | today: browser -> API disk -> bucket |
-| Security gaps (rate limiting, password reset, invite-only signup, CSRF token, secure headers) | not built | |
+| Direct browser -> bucket uploads (multipart, signed part URLs, 4 parallel, retries; PUT fallback) | built | moto tests; full browser test against an S3 emulator: 11 parts, no bytes through the API, identical size |
+| Security: sign-in rate limits, invites, password reset/change, CSRF header, CSP + headers, member removal, club export/delete | built | 17 tests; mutation-tested (CSRF check, session cascade); browser test covers invite + reset-by-link |
 | Hosting, backups, monitoring, GDPR paperwork, billing | not started | needs your decisions/accounts |
 
 **Fixed along the way:** a worker on another machine would have tried to download into the API

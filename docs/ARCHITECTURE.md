@@ -50,8 +50,10 @@ the UI's demo banner doesn't travel with the file.
 supplied as `<video>.tracking.json`. Pitch setup also records when the 2nd half kicks off.
 
 Tested end to end on rendered synthetic matches (`tests/synthetic_video.py`): video -> events equals
-rules-on-true-positions. The only detector today recognises those renders; a trained model
-(RF-DETR) is the missing piece, plus a stronger tracker for occlusions (players overlapping on
+rules-on-true-positions. RF-DETR (COCO weights) is wired in as `PITCHSIGHT_FRAME_DETECTOR=rfdetr`: it
+loads and runs (about 0.5 s per frame on this CPU; a GPU is ~10x faster), but how well COCO weights
+find players and especially the ball in Veo panoramas is unknown until there's footage. Still
+missing: fine-tuning on Veo frames, plus a stronger tracker for occlusions (players overlapping on
 camera merge into one blob) and a keeper class (a keeper's kit close to an outfield kit is
 otherwise assigned to that team). Detectors receive a `MatchContext` (calibration,
 direction of play).
