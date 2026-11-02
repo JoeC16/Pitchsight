@@ -34,7 +34,9 @@ sport_packs/*.yaml        taxonomy per sport: event types + attributes + scoring
 backend/app/
   main.py                 app, lifespan (create tables, fail stuck jobs), static frontend mount
   models.py               Club, User, AuthSession, Match, Event (attributes is a JSON dict)
-  auth.py                 password hashing, sessions, current_user dependency
+  auth.py                 password hashing, sessions, current_user, sign-in rate limits, emailed tokens
+  security.py             CSRF header check + security headers middleware
+  mailer.py               email: log (dev) or SMTP
   migrate.py              runs Alembic on startup (backend/migrations/)
   cli.py                  python -m app.cli create-user
   taxonomy.py             loads packs, validate_event()
@@ -76,6 +78,8 @@ docs/ROADMAP.md           phased plan with exit criteria and risks
 
 ## Design decisions to preserve
 
+- **Writes from the browser send `X-PitchSight: 1`** (CSRF protection; `api()` in app.js does it). Raw
+  `fetch`/XHR calls must add it too.
 - **Every query is club-scoped.** Resolve matches with `_get_match(db, id, user)` and events with
   `_get_event(db, id, user)`; never `db.get(Match, id)` in a route. Other clubs' ids are a 404.
 - **Schema changes need a migration.** `alembic revision --autogenerate`, then review it;

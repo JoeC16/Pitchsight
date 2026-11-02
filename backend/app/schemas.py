@@ -207,3 +207,32 @@ class PitchSetupIn(BaseModel):
     away_colour: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
     second_half_s: float | None = Field(default=None, gt=0)  # video time the 2nd half kicks off
     points: list[PitchPoint] = Field(min_length=4)
+
+
+
+class Invite(BaseModel):
+    email: Email
+    role: Literal["admin", "member"] = "member"
+
+
+class AcceptInvite(BaseModel):
+    token: str = Field(min_length=10, max_length=200)
+    password: Password
+
+
+class ResetRequest(BaseModel):
+    email: str = Field(max_length=254)
+
+
+class ResetConfirm(BaseModel):
+    token: str = Field(min_length=10, max_length=200)
+    password: Password
+
+
+class ChangePassword(BaseModel):
+    current_password: str
+    new_password: Password
+
+
+class DeleteClub(BaseModel):
+    confirm: str  # the club's name, typed out

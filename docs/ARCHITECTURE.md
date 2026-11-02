@@ -84,6 +84,10 @@ false, precision, recall, team agreement, attribute accuracy (one-to-one matchin
   SHA-256 of a random login token (HttpOnly cookie `ps_session`, or `Authorization: Bearer`).
 - Every `Match` belongs to a club. All match/event routes resolve the match through the caller's
   club; another club's ids return 404 (not 403) so they can't be probed.
+- Security (`security.py`, `auth.py`): writes authenticated by the cookie must send `X-PitchSight: 1`
+  (CSRF; bearer-token callers are exempt); CSP, frame, nosniff, referrer headers on every response;
+  sign-in failures are counted per email and IP (`LoginFailure`) and lock sign-in for a window;
+  invite and reset tokens (`AuthToken`) are single-use, expiring, stored as hashes.
 - Schema changes go through Alembic (`backend/migrations/`), run on startup.
 
 - `Match`: title, sport, teams, status (`created -> uploaded -> processing -> ready | failed`),
@@ -99,6 +103,12 @@ false, precision, recall, team agreement, attribute accuracy (one-to-one matchin
 | POST | `/auth/register` | create club + admin user, sign in (if `PITCHSIGHT_ALLOW_SIGNUP`) |
 | POST | `/auth/login`, `/auth/logout` | start / end a session |
 | GET | `/auth/me` | current user + club |
+| POST | `/auth/invites`; GET `/auth/invites/{token}`; POST `/auth/invites/accept` | admin invites by email (single-use, 7 days) / invite details / join |
+| POST | `/auth/password-reset`, `/auth/password-reset/confirm` | emailed reset link (single-use, 1 h; no account probing) / set new password |
+| POST | `/auth/password` | change own password (signs out other sessions) |
+| DELETE | `/auth/users/{id}` | admin removes a member |
+| GET/DELETE | `/club/export`, `/club` | admin: export all club data as JSON / delete the club and its files |
+| GET | `/config`, `/health` | public client settings / health check |
 | GET/POST | `/auth/users` | list club members / admin adds a member |
 | GET | `/sports`, `/sports/{sport}` | list packs; full taxonomy for the UI (no login needed) |
 | POST/GET | `/matches` | create (metadata only) / list |

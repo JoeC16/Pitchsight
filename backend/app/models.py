@@ -33,6 +33,8 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     club: Mapped[Club] = relationship(back_populates="users")
+    # ORM cascade: removing a user signs them out everywhere (sqlite doesn't enforce ON DELETE).
+    sessions: Mapped[list["AuthSession"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
 
 class AuthSession(Base):
@@ -45,7 +47,7 @@ class AuthSession(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
-    user: Mapped[User] = relationship()
+    user: Mapped[User] = relationship(back_populates="sessions")
 
 
 class Match(Base):
@@ -190,3 +192,30 @@ class Job(Base):
     error: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class LoginFailure(Base):
+    """A failed sign-in, for rate limiting (per email and per IP, over a sliding window)."""
+
+    __tablename__ = "login_failures"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(String(254), index=True)
+    ip: Mapped[str] = mapped_column(String(64), index=True)
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
+
+
+class AuthToken(Base):
+    """Single-use emailed tokens: club invites and password resets. Only the hash is stored."""
+
+    __tablename__ = "auth_tokens"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(20))                 # invite | reset
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    email: Mapped[str] = mapped_column(String(254))
+    club_id: Mapped[int | None] = mapped_column(ForeignKey("clubs.id", ondelete="CASCADE"), nullable=True)
+    role: Mapped[str | None] = mapped_column(String(20), nullable=True)  # for invites
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

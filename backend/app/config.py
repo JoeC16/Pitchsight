@@ -46,3 +46,18 @@ PROXY_MODE = os.environ.get("PITCHSIGHT_PROXY", "auto")
 JOBS_MODE = os.environ.get("PITCHSIGHT_JOBS", "inline")
 JOB_LEASE_S = float(os.environ.get("PITCHSIGHT_JOB_LEASE_S", "600"))  # no heartbeat for this long: worker died
 JOB_MAX_ATTEMPTS = int(os.environ.get("PITCHSIGHT_JOB_MAX_ATTEMPTS", "3"))
+
+# Public address of the web app, for links in emails (invites, password resets).
+PUBLIC_URL = os.environ.get("PITCHSIGHT_PUBLIC_URL", "http://localhost:8000").rstrip("/")
+# Email: "log" writes messages to the server log (development); "smtp" sends them (Postmark,
+# Resend, SES and others all offer SMTP).
+EMAIL_BACKEND = os.environ.get("PITCHSIGHT_EMAIL", "log")
+SMTP_HOST = os.environ.get("PITCHSIGHT_SMTP_HOST", "")
+SMTP_PORT = int(os.environ.get("PITCHSIGHT_SMTP_PORT", "587"))
+SMTP_USER = os.environ.get("PITCHSIGHT_SMTP_USER", "")
+SMTP_PASSWORD = os.environ.get("PITCHSIGHT_SMTP_PASSWORD", "")
+EMAIL_FROM = os.environ.get("PITCHSIGHT_EMAIL_FROM", "PitchSight <no-reply@localhost>")
+# Sign-in rate limits: this many failures within the window locks further attempts.
+LOGIN_MAX_FAILURES_PER_EMAIL = int(os.environ.get("PITCHSIGHT_LOGIN_MAX_FAILURES", "5"))
+LOGIN_MAX_FAILURES_PER_IP = int(os.environ.get("PITCHSIGHT_LOGIN_MAX_FAILURES_IP", "20"))
+LOGIN_WINDOW_S = int(os.environ.get("PITCHSIGHT_LOGIN_WINDOW_S", "900"))

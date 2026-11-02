@@ -7,7 +7,8 @@ from sqlalchemy import text, update
 from . import config, models, storage
 from .db import SessionLocal
 from .migrate import upgrade_db
-from .routers import auth, events, matches, reels, sports
+from .routers import auth, club, events, matches, reels, sports
+from .security import SecurityMiddleware
 
 
 @asynccontextmanager
@@ -40,6 +41,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="PitchSight", lifespan=lifespan)
+app.add_middleware(SecurityMiddleware)
 
 
 @app.get("/api/config", tags=["ops"])
@@ -56,6 +58,7 @@ def health() -> dict:
     return {"status": "ok"}
 
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+app.include_router(club.router, prefix="/api/club", tags=["club"])
 app.include_router(sports.router, prefix="/api/sports", tags=["sports"])
 app.include_router(matches.router, prefix="/api/matches", tags=["matches"])
 app.include_router(events.router, prefix="/api/events", tags=["events"])

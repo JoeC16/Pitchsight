@@ -22,7 +22,11 @@ body.signed-out .layout { grid-template-columns: 1fr; }
   border-radius: 12px; padding: 22px; align-self: start; }
 .auth h2 { margin: 0 0 14px; }
 .auth .btn.primary { width: 100%; margin-top: 4px; }
-.members { margin-bottom: 12px; }
+.members { margin-bottom: 4px; }
+.member .x { background: none; border: 0; color: var(--muted); cursor: pointer; margin-left: 4px; }
+.csection { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 12px; }
+.invite-link { width: 100%; background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font-size: 12px; }
+dialog { max-height: 92vh; overflow-y: auto; }
 .member { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--line); }
 
 .layout { display: grid; grid-template-columns: 240px 1fr; height: calc(100% - 52px); }

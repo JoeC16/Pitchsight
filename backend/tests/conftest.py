@@ -26,6 +26,18 @@ from app.main import app
 
 _n = itertools.count()
 
+# Every test client behaves like the web app, which sends the CSRF header on every request.
+# (tests/test_security.py removes it to check the protection.)
+_client_init = TestClient.__init__
+
+
+def _init_with_csrf_header(self, *args, **kwargs):
+    _client_init(self, *args, **kwargs)
+    self.headers["X-PitchSight"] = "1"
+
+
+TestClient.__init__ = _init_with_csrf_header
+
 
 def register(client: TestClient, club: str) -> dict:
     r = client.post("/api/auth/register",

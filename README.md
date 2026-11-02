@@ -64,13 +64,19 @@ code changes needed. Copy `soccer.yaml` to start a new sport.
 | `PITCHSIGHT_DB_URL` | sqlite in data dir | any SQLAlchemy URL |
 | `PITCHSIGHT_ALLOW_SIGNUP` | `true` | allow `POST /api/auth/register` (creates a new club + admin) |
 | `PITCHSIGHT_SESSION_DAYS` | `30` | login session lifetime |
-| `PITCHSIGHT_SECURE_COOKIES` | `false` | set `true` behind HTTPS |
+| `PITCHSIGHT_SECURE_COOKIES` | `false` | set `true` behind HTTPS (also turns on HSTS) |
+| `PITCHSIGHT_PUBLIC_URL` | `http://localhost:8000` | the app's address, for links in invite / reset emails |
+| `PITCHSIGHT_EMAIL` | `log` | `smtp` to send email (`PITCHSIGHT_SMTP_HOST/_PORT/_USER/_PASSWORD`, `PITCHSIGHT_EMAIL_FROM`); `log` writes it to the server log |
+| `PITCHSIGHT_LOGIN_MAX_FAILURES` / `_IP` / `PITCHSIGHT_LOGIN_WINDOW_S` | `5` / `20` / `900` | failed sign-ins (per email / per IP) within the window before sign-in is locked |
 
 ## Accounts
 
 Each club's users see only that club's matches. The first person signs up in the UI ("Create an
-account"), which creates the club and makes them its admin; admins add coaches from the club
-menu in the top bar. From the command line (e.g. with sign-up closed):
+account"), which creates the club and makes them its admin; admins invite coaches from the club
+menu in the top bar (emailed single-use link). In production set `PITCHSIGHT_ALLOW_SIGNUP=false` and
+create each club's first admin with the CLI. The club menu also has password change, data export
+and club deletion. Security: cookie writes need an `X-PitchSight: 1` header (CSRF), sign-in is rate
+limited, password resets sign out other sessions, and responses carry a strict CSP. From the command line (e.g. with sign-up closed):
 
 ```bash
 python -m app.cli create-user coach@club.ie --club "St Mary's GAC"   # prompts for password

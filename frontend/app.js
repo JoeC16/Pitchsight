@@ -33,7 +33,8 @@ const fmtTime = (t) => {
 async function api(path, { method = 'GET', body } = {}) {
   const res = await fetch('/api' + path, {
     method,
-    headers: body !== undefined ? { 'Content-Type': 'application/json' } : {},
+    // X-PitchSight: the server refuses cookie-authenticated writes without it (CSRF protection).
+    headers: { 'X-PitchSight': '1', ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   if (res.status === 401 && !path.startsWith('/auth/')) {
@@ -847,6 +848,7 @@ function putVideo(id, file, onProgress) {
   return new Promise((resolve, reject) => {
     const x = new XMLHttpRequest();
     x.open('PUT', `/api/matches/${id}/video`);
+    x.setRequestHeader('X-PitchSight', '1');
     x.setRequestHeader('X-Filename', encodeURIComponent(file.name));
     x.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(e.loaded / e.total); };
     x.onload = () => {
@@ -964,16 +966,21 @@ async function openUpload() {
 }
 
 // ---------- auth ----------
-function showAuth(mode = 'login') {
+function authPage(...kids) {
   clearInterval(S.poll);
   S.me = null; S.match = null; S.matches = [];
   document.body.classList.add('signed-out');
   $('#user-box').replaceChildren();
+  $('#main').replaceChildren(h('form', { class: 'auth', onsubmit: (e) => e.preventDefault() }, ...kids));
+}
+
+const backToSignIn = () => h('p', { class: 'muted' }, h('a', { href: '#', onclick: (e) => { e.preventDefault(); location.hash = ''; showAuth(); } }, 'Back to sign in'));
+
+function showAuth(mode = 'login') {
   const f = { club: '', email: '', password: '' };
   const err = h('div', { class: 'err' });
   const isLogin = mode === 'login';
-  const submit = async (ev) => {
-    ev.preventDefault();
+  const submit = async () => {
     err.textContent = '';
     try {
       S.me = isLogin
@@ -982,17 +989,68 @@ function showAuth(mode = 'login') {
       await boot();
     } catch (e) { err.textContent = e.message; }
   };
-  $('#main').replaceChildren(
-    h('form', { class: 'auth', onsubmit: submit },
-      h('h2', null, isLogin ? 'Sign in' : 'Create your club'),
-      isLogin ? null : field('Club name', h('input', { type: 'text', name: 'club', required: true, oninput: (e) => { f.club = e.target.value; } })),
-      field('Email', h('input', { type: 'email', name: 'email', autocomplete: 'username', required: true, oninput: (e) => { f.email = e.target.value; } })),
-      field('Password' + (isLogin ? '' : ' (8+ characters)'), h('input', { type: 'password', name: 'password', autocomplete: isLogin ? 'current-password' : 'new-password', required: true, minlength: isLogin ? null : 8, oninput: (e) => { f.password = e.target.value; } })),
-      err,
-      h('button', { class: 'btn primary', type: 'submit' }, isLogin ? 'Sign in' : 'Create club'),
-      h('p', { class: 'muted' }, isLogin ? 'New club? ' : 'Already have an account? ',
-        h('a', { href: '#', onclick: (e) => { e.preventDefault(); showAuth(isLogin ? 'register' : 'login'); } }, isLogin ? 'Create an account' : 'Sign in'))),
-  );
+  const signupOpen = !S.config || S.config.signup;
+  authPage(
+    h('h2', null, isLogin ? 'Sign in' : 'Create your club'),
+    isLogin ? null : field('Club name', h('input', { type: 'text', name: 'club', required: true, oninput: (e) => { f.club = e.target.value; } })),
+    field('Email', h('input', { type: 'email', name: 'email', autocomplete: 'username', required: true, oninput: (e) => { f.email = e.target.value; } })),
+    field('Password' + (isLogin ? '' : ' (8+ characters)'), h('input', { type: 'password', name: 'password', autocomplete: isLogin ? 'current-password' : 'new-password', required: true, minlength: isLogin ? null : 8, oninput: (e) => { f.password = e.target.value; } })),
+    err,
+    h('button', { class: 'btn primary', type: 'submit', onclick: (e) => { if (e.target.form.reportValidity()) submit(); } }, isLogin ? 'Sign in' : 'Create club'),
+    isLogin ? h('p', { class: 'muted' }, h('a', { href: '#', id: 'forgot', onclick: (e) => { e.preventDefault(); showForgot(f.email); } }, 'Forgot your password?')) : null,
+    signupOpen || !isLogin ? h('p', { class: 'muted' }, isLogin ? 'New club? ' : 'Already have an account? ',
+      h('a', { href: '#', onclick: (e) => { e.preventDefault(); showAuth(isLogin ? 'register' : 'login'); } }, isLogin ? 'Create an account' : 'Sign in')) : null);
+}
+
+function showForgot(email = '') {
+  const msg = h('div', { class: 'muted' });
+  const input = h('input', { type: 'email', name: 'email', required: true, value: email });
+  authPage(
+    h('h2', null, 'Reset your password'),
+    h('p', { class: 'muted' }, "We'll email you a link to choose a new one."),
+    field('Email', input), msg,
+    h('button', { class: 'btn primary', type: 'submit', onclick: async (e) => {
+      if (!e.target.form.reportValidity()) return;
+      try { msg.textContent = (await api('/auth/password-reset', { method: 'POST', body: { email: input.value } })).detail + '.'; } catch (x) { msg.textContent = x.message; }
+    } }, 'Send link'),
+    backToSignIn());
+}
+
+function showReset(token) {
+  const err = h('div', { class: 'err' });
+  const input = h('input', { type: 'password', name: 'password', autocomplete: 'new-password', required: true, minlength: 8 });
+  authPage(
+    h('h2', null, 'Choose a new password'),
+    field('New password (8+ characters)', input), err,
+    h('button', { class: 'btn primary', type: 'submit', onclick: async (e) => {
+      if (!e.target.form.reportValidity()) return;
+      try {
+        S.me = await api('/auth/password-reset/confirm', { method: 'POST', body: { token, password: input.value } });
+        location.hash = ''; await boot();
+      } catch (x) { err.textContent = x.message; }
+    } }, 'Save and sign in'),
+    backToSignIn());
+}
+
+async function showInvite(token) {
+  let info;
+  try { info = await api(`/auth/invites/${encodeURIComponent(token)}`); } catch (e) {
+    return authPage(h('h2', null, 'Invite link'), h('p', { class: 'err' }, e.message), backToSignIn());
+  }
+  const err = h('div', { class: 'err' });
+  const input = h('input', { type: 'password', name: 'password', autocomplete: 'new-password', required: true, minlength: 8 });
+  authPage(
+    h('h2', null, `Join ${info.club}`),
+    h('p', { class: 'muted' }, `You were invited as ${info.email}. Choose a password to finish.`),
+    field('Password (8+ characters)', input), err,
+    h('button', { class: 'btn primary', type: 'submit', onclick: async (e) => {
+      if (!e.target.form.reportValidity()) return;
+      try {
+        S.me = await api('/auth/invites/accept', { method: 'POST', body: { token, password: input.value } });
+        location.hash = ''; await boot();
+      } catch (x) { err.textContent = x.message; }
+    } }, 'Join club'),
+    backToSignIn());
 }
 
 function renderUserBox() {
@@ -1011,29 +1069,60 @@ async function logout() {
 async function openClub() {
   const dlg = h('dialog');
   const list = h('div', { class: 'members' });
-  const err = h('div', { class: 'err' });
-  const f = { email: '', password: '', role: 'member' };
+  const admin = S.me.role === 'admin';
   async function draw() {
     const users = await api('/auth/users');
-    list.replaceChildren(...users.map((u) => h('div', { class: 'member' }, h('span', null, u.email), h('span', { class: 'tag' }, u.role))));
+    list.replaceChildren(...users.map((u) => h('div', { class: 'member' },
+      h('span', null, u.email, u.id === S.me.id ? ' (you)' : ''),
+      h('span', null, h('span', { class: 'tag' }, u.role),
+        admin && u.id !== S.me.id ? h('button', { class: 'x', title: `Remove ${u.email}`, onclick: async () => {
+          if (!confirm(`Remove ${u.email} from ${S.me.club.name}? They will be signed out.`)) return;
+          await api(`/auth/users/${u.id}`, { method: 'DELETE' }); draw();
+        } }, '×') : ''))));
   }
-  const form = S.me.role === 'admin'
-    ? h('form', { onsubmit: async (e) => {
-      e.preventDefault(); err.textContent = '';
-      try {
-        await api('/auth/users', { method: 'POST', body: f });
-        e.target.reset(); f.email = f.password = ''; await draw();
-      } catch (x) { err.textContent = x.message; }
-    } },
-    h('div', { class: 'ftitle' }, 'Add a coach'),
+  const section = (title, ...kids) => h('div', { class: 'csection' }, h('div', { class: 'ftitle' }, title), ...kids);
+
+  // Invite a coach (admins)
+  const inv = { email: '', role: 'member' };
+  const invErr = h('div', { class: 'err' }), invOut = h('div', { class: 'invite-out' });
+  const invite = admin ? section('Invite a coach',
     h('div', { class: 'row' },
-      field('Email', h('input', { type: 'email', required: true, oninput: (e) => { f.email = e.target.value; } })),
-      field('Temporary password', h('input', { type: 'text', required: true, minlength: 8, oninput: (e) => { f.password = e.target.value; } }))),
-    field('Role', select([['member', 'Member'], ['admin', 'Admin (can add users)']], f.role, (v) => { f.role = v; })),
-    err,
-    h('div', { class: 'actions' }, h('button', { class: 'btn primary', type: 'submit' }, 'Add')))
-    : h('p', { class: 'muted' }, 'Ask a club admin to add coaches.');
-  dlg.append(h('h3', null, S.me.club.name), h('div', { class: 'ftitle' }, 'Members'), list, form,
+      field('Email', h('input', { type: 'email', id: 'invite-email', oninput: (e) => { inv.email = e.target.value; } })),
+      field('Role', select([['member', 'Member'], ['admin', 'Admin (can invite)']], inv.role, (v) => { inv.role = v; }))),
+    invErr, invOut,
+    h('div', { class: 'actions' }, h('button', { class: 'btn primary', id: 'invite-send', onclick: async () => {
+      invErr.textContent = ''; invOut.replaceChildren();
+      try {
+        const r = await api('/auth/invites', { method: 'POST', body: inv });
+        const link = h('input', { type: 'text', readonly: true, value: r.link, class: 'invite-link', onclick: (e) => e.target.select() });
+        invOut.replaceChildren(h('p', { class: 'muted small' }, `Invite emailed to ${r.email}. You can also send them this link (works once, for ${r.expires_days} days):`), link);
+      } catch (x) { invErr.textContent = x.message; }
+    } }, 'Send invite'))) : h('p', { class: 'muted' }, 'Ask a club admin to invite coaches.');
+
+  // Change my password
+  const pw = { current_password: '', new_password: '' };
+  const pwMsg = h('div', { class: 'err' });
+  const password = section('Change my password',
+    h('div', { class: 'row' },
+      field('Current', h('input', { type: 'password', autocomplete: 'current-password', oninput: (e) => { pw.current_password = e.target.value; } })),
+      field('New (8+ characters)', h('input', { type: 'password', autocomplete: 'new-password', oninput: (e) => { pw.new_password = e.target.value; } }))),
+    pwMsg,
+    h('div', { class: 'actions' }, h('button', { class: 'btn', onclick: async () => {
+      try { await api('/auth/password', { method: 'POST', body: pw }); pwMsg.className = 'muted'; pwMsg.textContent = 'Password changed. Other devices were signed out.'; } catch (x) { pwMsg.className = 'err'; pwMsg.textContent = x.message; }
+    } }, 'Change password')));
+
+  // Data (admins)
+  const data = admin ? section('Club data',
+    h('p', { class: 'muted small' }, 'Download everything (matches, events, members) as JSON, or delete the club, its members and all its videos. Deleting cannot be undone.'),
+    h('div', { class: 'actions' },
+      h('a', { class: 'btn', href: '/api/club/export', download: '' }, 'Export data'),
+      h('button', { class: 'btn danger', onclick: async () => {
+        const typed = prompt(`This permanently deletes ${S.me.club.name}, all its members, matches and videos.\nType the club name to confirm:`);
+        if (typed === null) return;
+        try { await api('/club', { method: 'DELETE', body: { confirm: typed } }); dlg.close(); location.hash = ''; showAuth(); } catch (x) { alert(x.message); }
+      } }, 'Delete club'))) : null;
+
+  dlg.append(h('h3', null, S.me.club.name), section('Members', list), invite, password, data,
     h('div', { class: 'actions' }, h('button', { class: 'btn', onclick: () => dlg.close() }, 'Close')));
   dlg.addEventListener('close', () => dlg.remove());
   document.body.append(dlg);
@@ -1043,6 +1132,10 @@ async function openClub() {
 
 // ---------- boot ----------
 async function boot() {
+  if (!S.config) S.config = await api('/config').catch(() => null);
+  // Links from emails: #invite=TOKEN, #reset=TOKEN
+  const link = location.hash.match(/^#(invite|reset)=([\w-]+)$/);
+  if (link) return link[1] === 'invite' ? showInvite(link[2]) : showReset(link[2]);
   try {
     S.me = await api('/auth/me');
   } catch (e) {
@@ -1058,5 +1151,7 @@ async function boot() {
 
 document.addEventListener('DOMContentLoaded', () => {
   $('#new-match').addEventListener('click', openUpload);
+  // An invite/reset link opened in a tab that already has the app only changes the hash.
+  window.addEventListener('hashchange', () => { if (/^#(invite|reset)=/.test(location.hash)) boot(); });
   boot();
 });

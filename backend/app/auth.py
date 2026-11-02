@@ -89,7 +89,7 @@ def current_user(request: Request, db: Session = Depends(get_db)) -> User:
     if token:
         sess = db.scalar(select(AuthSession).where(AuthSession.token_hash == _token_hash(token)))
         # sqlite drops tzinfo on read; treat stored times as UTC.
-        if sess and sess.expires_at.replace(tzinfo=timezone.utc) > datetime.now(timezone.utc):
+        if sess and sess.user and sess.expires_at.replace(tzinfo=timezone.utc) > datetime.now(timezone.utc):
             return sess.user
     raise HTTPException(401, "Not signed in")
 
@@ -102,3 +102,67 @@ def admin_user(user: User = Depends(current_user)) -> User:
 
 CurrentUser = Annotated[User, Depends(current_user)]
 AdminUser = Annotated[User, Depends(admin_user)]
+
+
+# ---------- sign-in rate limiting ----------
+
+def client_ip(request: Request) -> str:
+    return (request.client.host if request.client else "") or "unknown"
+
+
+def check_login_allowed(db: Session, email: str, ip: str) -> None:
+    """429 while this email or IP has too many recent failures."""
+    from sqlalchemy import func
+
+    from .models import LoginFailure
+    since = datetime.now(timezone.utc) - timedelta(seconds=config.LOGIN_WINDOW_S)
+    db.execute(delete(LoginFailure).where(LoginFailure.at < since))  # forget old failures
+    by_email = db.scalar(select(func.count()).select_from(LoginFailure).where(LoginFailure.email == email, LoginFailure.at >= since))
+    by_ip = db.scalar(select(func.count()).select_from(LoginFailure).where(LoginFailure.ip == ip, LoginFailure.at >= since))
+    db.commit()
+    if by_email >= config.LOGIN_MAX_FAILURES_PER_EMAIL or by_ip >= config.LOGIN_MAX_FAILURES_PER_IP:
+        minutes = max(1, config.LOGIN_WINDOW_S // 60)
+        raise HTTPException(429, f"Too many failed sign-ins; try again in {minutes} minutes or reset your password",
+                            headers={"Retry-After": str(config.LOGIN_WINDOW_S)})
+
+
+def record_login_failure(db: Session, email: str, ip: str) -> None:
+    from .models import LoginFailure
+    db.add(LoginFailure(email=email, ip=ip))
+    db.commit()
+
+
+def clear_login_failures(db: Session, email: str) -> None:
+    from .models import LoginFailure
+    db.execute(delete(LoginFailure).where(LoginFailure.email == email))
+    db.commit()
+
+
+# ---------- single-use emailed tokens (invites, password resets) ----------
+
+def issue_token(db: Session, kind: str, email: str, ttl: timedelta, **fields) -> str:
+    from .models import AuthToken
+    token = secrets.token_urlsafe(32)
+    db.add(AuthToken(kind=kind, token_hash=_token_hash(token), email=email,
+                     expires_at=datetime.now(timezone.utc) + ttl, **fields))
+    db.commit()
+    return token
+
+
+def find_token(db: Session, kind: str, token: str):
+    """The unused, unexpired token of this kind, or None."""
+    from .models import AuthToken
+    row = db.scalar(select(AuthToken).where(AuthToken.token_hash == _token_hash(token), AuthToken.kind == kind))
+    if row is None or row.used_at is not None or row.expires_at.replace(tzinfo=timezone.utc) <= datetime.now(timezone.utc):
+        return None
+    return row
+
+
+def end_other_sessions(db: Session, user: User, request: Request | None = None) -> None:
+    """Sign the user out everywhere (except this request's session, if given)."""
+    keep = _token_hash(t) if request is not None and (t := _request_token(request)) else None
+    q = delete(AuthSession).where(AuthSession.user_id == user.id)
+    if keep:
+        q = q.where(AuthSession.token_hash != keep)
+    db.execute(q)
+    db.commit()

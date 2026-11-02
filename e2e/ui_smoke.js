@@ -238,7 +238,7 @@ function check(cond, msg) {
     await page.evaluate(async (id) => { // review everything in 0-30s, as a coach would
       const evs = await (await fetch(`/api/matches/${id}/events?reviewed=false`)).json();
       for (const e of evs.filter((x) => x.t_start <= 30)) {
-        await fetch(`/api/events/${e.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: '{"reviewed":true}' });
+        await fetch(`/api/events/${e.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'X-PitchSight': '1' }, body: '{"reviewed":true}' });
       }
     }, mid);
     await page.evaluate(() => { document.querySelector('#video').currentTime = 30; });
@@ -269,15 +269,30 @@ function check(cond, msg) {
     const size = fs.statSync(out).size;
     check(size > 10000 && dl.suggestedFilename().endsWith('_DEMO-simulated-event.mp4'), `clip downloaded: ${dl.suggestedFilename()} (${size} bytes)`);
 
-    // --- club dialog: admin adds a coach
+    // --- club dialog: admin invites a coach, who joins from the link in another browser
     await page.locator('#user-box button', { hasText: 'St Mary GAC' }).click();
     const club = page.locator('dialog[open]');
-    await club.locator('input[type=email]').fill(`assistant${Date.now()}@example.com`);
-    await club.locator('input[type=text]').fill('temp-password');
-    await club.locator('button[type=submit]').click();
-    await page.waitForFunction(() => document.querySelectorAll('dialog[open] .member').length === 2);
-    check(true, 'admin added a coach to the club');
+    const coachEmail = `assistant${Date.now()}@example.com`;
+    await club.locator('#invite-email').fill(coachEmail);
+    await club.locator('#invite-send').click();
+    const inviteLink = await club.locator('.invite-link').inputValue();
+    check(/#invite=[\w-]+$/.test(inviteLink), 'admin sent an invite and got its link');
+    await snap('club');
     await club.locator('button', { hasText: 'Close' }).click();
+    const coach = await browser.newContext();
+    const cpage = await coach.newPage();
+    await cpage.goto(inviteLink.replace(/^https?:\/\/[^/]+/, base));
+    await cpage.waitForSelector('form.auth h2');
+    check(/Join St Mary GAC/.test(await cpage.locator('form.auth h2').innerText()), 'invite link opens "Join St Mary GAC"');
+    await cpage.fill('form.auth input[name=password]', 'coach-password');
+    await cpage.locator('form.auth button[type=submit]').click();
+    await cpage.waitForSelector('.match-item');
+    check(await cpage.locator('.match-item', { hasText: 'UI smoke test' }).count() === 1, "invited coach joined and sees the club's match");
+    await coach.close();
+    await page.locator('#user-box button', { hasText: 'St Mary GAC' }).click();
+    await page.waitForFunction((n) => document.querySelectorAll('dialog[open] .member').length === n, 2);
+    check(true, 'club now has 2 members');
+    await page.locator('dialog[open] button', { hasText: 'Close' }).click();
 
     // --- sign out, then back in: the match is still there
     await page.locator('#user-box button', { hasText: 'Sign out' }).click();
@@ -290,6 +305,26 @@ function check(cond, msg) {
     await page.locator('form.auth button[type=submit]').click();
     await page.waitForSelector('.match-item');
     check(await page.locator('.match-item', { hasText: 'UI smoke test' }).count() === 1, 'signed back in: match still listed');
+
+    // --- forgot password (and, when the server log is readable, the whole emailed-link flow)
+    await page.locator('#user-box button', { hasText: 'Sign out' }).click();
+    await page.waitForSelector('#forgot');
+    await page.click('#forgot');
+    await page.fill('form.auth input[name=email]', email);
+    await page.locator('form.auth button[type=submit]').click();
+    await page.waitForFunction(() => /reset link is on its way/.test(document.querySelector('form.auth').innerText));
+    check(true, 'forgot password: "reset link is on its way"');
+    if (process.env.SERVER_LOG) {  // PITCHSIGHT_EMAIL=log writes the email there
+      await page.waitForTimeout(300);
+      const links = fs.readFileSync(process.env.SERVER_LOG, 'utf8').match(/#reset=[\w-]+/g);
+      await page.goto(base + '/' + links[links.length - 1]);
+      await page.fill('form.auth input[name=password]', 'a-new-password');
+      await page.locator('form.auth button[type=submit]').click();
+      await page.waitForSelector('.match-item');
+      check(true, 'reset link: chose a new password and was signed in');
+    } else {
+      console.log('  info SERVER_LOG not set: skipped following the emailed reset link');
+    }
 
     if (proxyVideo) {
       // --- playback proxy: upload a browser-unfriendly file
